@@ -1,0 +1,40 @@
+id = "local.amphetamine-macos"
+name = "Amphetamine macOS Sleep Guard"
+version = "0.2.0"
+min_herdr_version = "0.7.0"
+description = "Resident LaunchAgent keeps macOS awake with Amphetamine while herdr agents work; controlled via an interactive TUI."
+platforms = ["macos"]
+
+# The monitor runs as a resident LaunchAgent (installed once with the
+# `install-launchagent` action). All control — start/pause (arm/disarm),
+# settings, and status — happens in the interactive TUI (`tui` action / pane).
+[[actions]]
+id = "tui"
+title = "Open Amphetamine Sleep Guard (TUI)"
+contexts = ["workspace"]
+command = ["python3", "scripts/tui.py"]
+
+[[actions]]
+id = "status"
+title = "Print Amphetamine monitor status"
+contexts = ["workspace"]
+command = ["python3", "scripts/monitor.py", "--status"]
+
+[[actions]]
+id = "install-launchagent"
+title = "Install the resident monitor LaunchAgent"
+contexts = ["workspace"]
+command = ["python3", "scripts/install_launchagent.py"]
+
+[[actions]]
+id = "uninstall-launchagent"
+title = "Uninstall the monitor LaunchAgent"
+contexts = ["workspace"]
+command = ["python3", "scripts/uninstall_launchagent.py"]
+
+# Interactive TUI rendered inside a herdr pane.
+[[panes]]
+id = "tui"
+title = "Amphetamine Sleep Guard"
+placement = "overlay"
+command = ["python3", "scripts/tui.py"]

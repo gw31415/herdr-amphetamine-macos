@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.herdr.amphetamine.monitor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PYTHON__</string>
+        <string>__PLUGIN_ROOT__/scripts/monitor.py</string>
+        <string>--daemon</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/herdr-amphetamine/monitor.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/herdr-amphetamine/monitor.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Bootstrap only: tunables live in config.json (TUI-editable) and are
+             re-read by the daemon every poll. The plist pins the absolute herdr
+             path (a user LaunchAgent has a minimal PATH) and the state dir. -->
+        <key>HERDR_BIN_PATH</key>
+        <string>__HERDR_BIN__</string>
+        <key>HERDR_AMPHETAMINE_STATE_DIR</key>
+        <string>__HOME__/Library/Application Support/herdr-amphetamine</string>
+    </dict>
+</dict>
+</plist>
