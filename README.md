@@ -83,6 +83,9 @@ herdr plugin action invoke tui --plugin local.amphetamine-macos
 The TUI shows live status (monitor state, working agents, Amphetamine session,
 recent log) and lets you:
 
+- **Mouse:** click any `[tag]` row or bottom-bar segment to trigger it.
+- **Keyboard:**
+
 | Key | Action |
 |-----|--------|
 | `Space` | **arm / disarm** the guard (start / pause) |
