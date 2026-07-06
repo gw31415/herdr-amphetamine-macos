@@ -4,7 +4,7 @@
 This is the human control surface for the resident LaunchAgent daemon. It:
 
   * shows live status (monitor state, working agents, Amphetamine session),
-  * arms / disarms the guard (start / pause) by flipping `armed` in config.json,
+  * arms / disarms the guard (enable / pause) by flipping `armed` in config.json,
   * edits every setting (poll, grace, session, paths, closed-display, ...),
   * installs / uninstalls the resident LaunchAgent,
   * tails the daemon's recent log lines.
@@ -357,7 +357,7 @@ def render(stdscr, d, footer_msg):
     if d["active"] is None:
         sa = "unknown"
     elif d["active"]:
-        sa = "yes" + (" (owned)" if owned else "")
+        sa = "yes" + (" (managed/top-up)" if owned else "")
     else:
         sa = "no"
     sess = (f"{cfg.session_minutes:g}m (extend at {cfg.extend_threshold_minutes:g}m)"
@@ -432,7 +432,7 @@ def help_overlay(stdscr):
     lines = [
         "Amphetamine Sleep Guard — keymap",
         "",
-        "  Space   arm / disarm the guard (start / pause)",
+        "  Space   arm / disarm the guard (enable / pause)",
         "  c       toggle closed-display keep-awake",
         "  d       toggle display-sleep-allowed",
         "  p g s m e   edit poll / start grace / stop grace / session / extend",

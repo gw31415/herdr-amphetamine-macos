@@ -2,11 +2,12 @@
 
 ## What this plugin touches
 
-- **Amphetamine**, via `osascript` AppleScript. The complete set of verbs is in
-  [`scripts/amphetamine_ctl.py`](../scripts/amphetamine_ctl.py):
-  `session is active`, `start new session`, `end session`, and
-  `enable closed display mode`. One verb per function; no string interpolation
-  from herdr data reaches AppleScript.
+- **Amphetamine**, via `osascript` AppleScript. The active monitor path uses
+  `session is active`, `session time remaining`, `start new session`, and
+  `enable closed display mode`. `scripts/amphetamine_ctl.py` still exposes
+  `end session` for manual/unit-test coverage, but the daemon does not call it.
+  One verb per function; no string interpolation from herdr data reaches
+  AppleScript.
 - **herdr**, via `herdr agent list` (read-only JSON). The monitor parses only the
   `agent_status` field.
 - **The user LaunchAgent** `com.herdr.amphetamine.monitor`, installed under
@@ -18,8 +19,8 @@
 - No Accessibility/UI automation, no synthetic clicks, no screen reading.
 - Does not write outside the user's home directory.
 - Does not touch any application other than Amphetamine.
-- Does not end an Amphetamine session it did not start (ownership is recorded in
-  `state.json` and reconciled at startup).
+- Does not end Amphetamine sessions at all; it only starts/tops up while agents
+  are working and then lets Amphetamine's own timer expire naturally.
 
 ## Privileges
 

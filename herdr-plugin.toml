@@ -6,7 +6,7 @@ description = "Resident LaunchAgent keeps macOS awake with Amphetamine while her
 platforms = ["macos"]
 
 # The monitor runs as a resident LaunchAgent (installed once with the
-# `install-launchagent` action). All control — start/pause (arm/disarm),
+# `install-launchagent` action). All control — enable/pause (arm/disarm),
 # settings, and status — happens in the interactive TUI (`tui` action / pane).
 [[actions]]
 id = "tui"

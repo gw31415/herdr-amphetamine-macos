@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """herdr Amphetamine macOS sleep-prevention monitor (resident daemon).
 
-Observes herdr agent status and keeps an Amphetamine session alive only while at
-least one agent is `working`. Uses hysteresis (start/stop grace periods) so
-status flicker does not rapidly toggle Amphetamine. Owns at most the session it
-started: a pre-existing Amphetamine session is never ended by this monitor.
+Observes herdr agent status and tops up Amphetamine time only while at least one
+agent is `working`. Uses hysteresis (start/stop grace periods) so status flicker
+does not rapidly toggle Amphetamine. It never ends an Amphetamine session: when
+agents go idle, the daemon simply stops extending and lets whatever session the
+user configured expire naturally.
 
 This process is launched and kept resident by a user LaunchAgent
 (`com.herdr.amphetamine.monitor`, RunAtLoad + KeepAlive). All human control —
-arm/disarm (start/pause), settings, status — happens through the TUI
+arm/disarm (enable/pause), settings, status — happens through the TUI
 (`scripts/tui.py`), which writes `config.json`; this daemon re-reads it every
-poll. When `armed=false` the daemon stays resident but releases its owned
-session and idles. SIGHUP forces an immediate config reload.
+poll. When `armed=false` the daemon stays resident but performs no Amphetamine
+side effects. SIGHUP forces an immediate config reload.
 
 Modes:
   python3 monitor.py             # daemon loop (used by the LaunchAgent)
@@ -111,7 +112,6 @@ def handle_transition(
     owned_session: bool,
     is_active_fn: Callable[[], bool],
     start_fn: Callable[[bool], None],
-    end_fn: Callable[[], None],
     prevent_closed_fn: Callable[[], None],
     log_fn: Callable[[str], None],
 ):
@@ -119,17 +119,17 @@ def handle_transition(
 
     Returns (owned_session, ok). ok is False when an Amphetamine call failed;
     the caller should then enter the error state. Side effects happen only when
-    entering 'on' (start) or entering 'off' (end). Pending transitions are free.
+    entering 'on' (start/top-up). Pending and off transitions never touch
+    Amphetamine.
 
-    Ownership rule: a session that was already active when we decided to start is
-    treated as someone else's - we set owned_session False and never end it.
+    Safety rule: this monitor never calls ``end session``. ``owned_session`` is
+    kept only as legacy state/UI metadata and must not grant permission to end a
+    user-created session.
     """
     if new == "on":
         if old == "pending_off":
-            # Resume: work came back during the stop grace, so the session we own
-            # (or were riding) is still active. Keep ownership unchanged and do
-            # not call Amphetamine. Counting this as a "start" would both leak a
-            # second session and wrongly drop ownership of the live one.
+            # Resume: work came back during the stop grace, so the session is
+            # still active. Keep metadata unchanged and do not call Amphetamine.
             return owned_session, True
         # old == "pending_on": actually start a session now.
         try:
@@ -160,18 +160,14 @@ def handle_transition(
             # Cancel: work did not survive the start grace, so nothing was
             # started and there is nothing to end.
             return owned_session, True
-        # old == "pending_off": stop grace elapsed; end if we own a session.
+        # old == "pending_off": stop grace elapsed. Do not end anything; simply
+        # stop extending while agents are idle. The existing session (manual or
+        # plugin-created) will expire according to Amphetamine's own timer.
         if owned_session:
-            try:
-                end_fn()
-            except Exception as exc:
-                log_fn(f"end_session failed: {exc}")
-                return owned_session, False
-            owned_session = False
-            log_fn("Ended owned Amphetamine session.")
+            log_fn("Agents idle; stopped extending Amphetamine session (left active session as-is).")
         else:
-            log_fn("No owned session to end; leaving Amphetamine as-is.")
-        return owned_session, True
+            log_fn("Agents idle; leaving Amphetamine as-is.")
+        return False, True
 
     # off->pending_on and on->pending_off: no Amphetamine action.
     return owned_session, True
@@ -346,21 +342,13 @@ def iterate(cfg: Config, ctx: MonitorCtx, now: float) -> MonitorCtx:
     backoff = cfg.poll_seconds
     last_error: Optional[str] = None
 
-    # Master switch: when disarmed via the TUI, release any owned session and
-    # idle. The daemon process stays resident (LaunchAgent KeepAlive) but does
-    # not act, so it does not even need Amphetamine to be present.
+    # Master switch: when disarmed via the TUI, do nothing. The daemon process
+    # stays resident (LaunchAgent KeepAlive) but performs no Amphetamine side
+    # effects, including ending sessions it previously started.
     if not cfg.armed:
-        if owned:
-            try:
-                amphetamine_ctl.end_session()
-                owned = False
-                log("Guard disarmed; released owned Amphetamine session.")
-            except amphetamine_ctl.AmphetamineError as exc:
-                last_error = f"could not end owned session on disarm: {exc}"
-                log(last_error)
         return MonitorCtx(
             monitor_state="off",
-            owned_session=owned,
+            owned_session=False,
             last_transition=now,
             last_agent_working=ctx.last_agent_working,
             last_error=last_error,
@@ -430,7 +418,6 @@ def iterate(cfg: Config, ctx: MonitorCtx, now: float) -> MonitorCtx:
             owned,
             amphetamine_ctl.is_session_active,
             lambda _disp=False: _start(),
-            amphetamine_ctl.end_session,
             prevent_fn,
             log,
         )
@@ -457,37 +444,29 @@ def iterate(cfg: Config, ctx: MonitorCtx, now: float) -> MonitorCtx:
             pass  # unreadable this cycle; try again next poll
         elif remaining == -3:
             # No active session.
-            if owned:
-                # Our session ended (duration expired, or Amphetamine lost it)
-                # while agents are still working: restart immediately so sleep
-                # prevention continues without a gap.
-                log("Owned session ended (duration may have expired); restarting.")
-                try:
-                    _start()
-                    prevent_fn()
-                    last_t = now
-                except amphetamine_ctl.AmphetamineError as exc:
-                    log(f"Restart failed: {exc}; entering error state.")
-                    state = "error"
-                    last_t = now
-                    last_error = "session restart failure"
-            else:
-                # We were riding a non-owned session that ended -> drop to off
-                # so we start our own next iteration.
-                log("Non-owned Amphetamine session ended; will re-evaluate.")
-                state = "off"
+            log("No active Amphetamine session while agents work; starting a short session.")
+            try:
+                _start()
+                prevent_fn()
+                owned = True
                 last_t = now
+            except amphetamine_ctl.AmphetamineError as exc:
+                log(f"Start failed: {exc}; entering error state.")
+                state = "error"
+                last_t = now
+                last_error = "session start failure"
         elif remaining == 0:
             pass  # infinite session; nothing to extend
-        elif owned and 0 < remaining <= cfg.extend_threshold_minutes * 60:
-            # Finite owned session is close to expiry -> extend it back to the
-            # full session length. Checked every poll (5s); extends roughly
-            # every (session_minutes - extend_threshold_minutes) minutes.
+        elif 0 < remaining <= cfg.extend_threshold_minutes * 60:
+            # Finite session is close to expiry -> extend it back to the full
+            # session length. This applies to manual sessions too; we only add
+            # time while agents are working and never end the session ourselves.
             log(f"Session has {remaining}s left (<= {int(cfg.extend_threshold_minutes)}m); "
                 f"extending to {int(cfg.session_minutes)}m.")
             try:
                 _start()
                 prevent_fn()
+                owned = True
                 last_t = now
             except amphetamine_ctl.AmphetamineError as exc:
                 log(f"Extend failed: {exc}")
@@ -548,7 +527,7 @@ def run_once(cfg: Config) -> None:
 
 
 def run_daemon(initial_cfg: Config) -> None:
-    """Run the monitor loop until SIGTERM/SIGINT, then end only owned sessions.
+    """Run the monitor loop until SIGTERM/SIGINT.
 
     Reloads config.json every cycle (so TUI edits take effect) and on SIGHUP
     (immediate). Stays resident via the LaunchAgent's KeepAlive.
@@ -601,13 +580,7 @@ def run_daemon(initial_cfg: Config) -> None:
             delay = ctx.backoff if ctx.monitor_state == "error" else cfg.poll_seconds
             stop.wait(max(1.0, delay))
     finally:
-        if ctx.owned_session:
-            try:
-                amphetamine_ctl.end_session()
-                ctx.owned_session = False
-                log("Ended owned Amphetamine session on shutdown.")
-            except amphetamine_ctl.AmphetamineError as exc:
-                log(f"Could not end owned session on shutdown: {exc}")
+        ctx.owned_session = False
         # We are stopping, so we are no longer guarding: reflect that in state
         # so the TUI / --status do not show a stale "on".
         ctx.monitor_state = "off"

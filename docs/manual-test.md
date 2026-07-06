@@ -17,7 +17,7 @@ python3 -m unittest discover -s tests -v
 Expect: all tests pass, including `test_sustained_working_starts_session`,
 `test_sustained_idle_stops_session`, the `test_flicker_*` family,
 `test_pre_existing_session_not_owned_and_not_started`,
-`test_disarmed_ends_owned_session`, `test_env_overrides_file_when_set`,
+`test_disarmed_does_not_end_owned_session`, `test_env_overrides_file_when_set`,
 `test_validate_clamps_negatives_and_bad_types`,
 `test_no_activate_when_start_succeeds`, and
 `test_restarts_when_owned_session_expired`.
@@ -37,8 +37,9 @@ editable settings. It refreshes ~1 Hz and never starts/ends a session itself.
 
 Key checks:
 
-- Press `Space` to **disarm**; within one poll the badge flips to DISARMED and any
-  owned session ends (`session is active` → `false`). Press `Space` again to arm.
+- Press `Space` to **disarm**; within one poll the badge flips to DISARMED. The
+  daemon must not end or alter the current Amphetamine session. Press `Space`
+  again to arm.
 - Edit a setting (e.g. `s` → stop grace → `15`); on quit it persists in
   `config.json` and the daemon honors it on the next cycle.
 - Press `?` for the keymap.
@@ -49,7 +50,7 @@ exits, like `monitor.py --status`.
 ## 1. Amphetamine control (no herdr dependency)
 
 > ⚠️ These change Amphetamine state. If you already have a session you care
-> about, end it first or skip to step 3.
+> about, skip this section or record/restore it manually.
 > ⚠️ Run on **AC power**. On battery, Amphetamine refuses AppleScript-started
 > sessions unless *Preferences → Sessions → Allow sessions while on battery
 > power* is on; `start_session` returns success but no session is created.
@@ -59,7 +60,8 @@ The first call triggers a macOS **Automation** permission prompt. Allow it.
 activating Amphetamine first, and only activates as a fallback if Amphetamine
 ignores the command (idle/app-nap). The default session length is 10 minutes;
 pass `duration_minutes=` to override. The monitor extends the session back to 10
-minutes whenever time remaining drops to the extend threshold (default 5).
+minutes whenever agents are working and time remaining drops to the extend
+threshold (default 5). It does not end the session when agents go idle.
 
 ```sh
 # Before: note the current state
@@ -155,7 +157,7 @@ launchctl print gui/$UID/com.herdr.amphetamine.monitor   # -> "Could not find se
 3. Within `poll + start_grace` (≈10s by default), confirm:
    `osascript -e 'tell application "Amphetamine" to session is active'` → `true`.
 4. Let the agent finish / go idle.
-5. Within `stop_grace` (≈30s), confirm the monitor ends *its* session:
-   `session is active` → `false` (assuming no pre-existing session).
+5. Within `stop_grace` (≈30s), confirm the monitor stops extending only. The
+   Amphetamine session remains active until its own remaining timer expires.
 
 Paste a short transcript into `PLANS.md` → *Outcomes & Retrospective* when green.

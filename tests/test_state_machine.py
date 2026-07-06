@@ -148,7 +148,6 @@ class HandleTransitionTests(unittest.TestCase):
             "pending_on", "on", False,
             is_active_fn=lambda: False,
             start_fn=lambda d: started.append(d),
-            end_fn=lambda: None,
             prevent_closed_fn=lambda: prevented.append(True),
             log_fn=self._noop_log,
         )
@@ -163,7 +162,6 @@ class HandleTransitionTests(unittest.TestCase):
             "pending_on", "on", False,
             is_active_fn=lambda: True,
             start_fn=lambda d: started.append(d),
-            end_fn=lambda: None,
             prevent_closed_fn=lambda: None,
             log_fn=self._noop_log,
         )
@@ -177,7 +175,6 @@ class HandleTransitionTests(unittest.TestCase):
             "pending_off", "off", False,
             is_active_fn=lambda: False,
             start_fn=lambda d: None,
-            end_fn=lambda: ended.append(True),
             prevent_closed_fn=lambda: None,
             log_fn=self._noop_log,
         )
@@ -185,19 +182,18 @@ class HandleTransitionTests(unittest.TestCase):
         self.assertFalse(owned)
         self.assertEqual(ended, [])
 
-    def test_ends_owned_session(self):
+    def test_idle_does_not_end_owned_session(self):
         ended = []
         owned, ok = monitor.handle_transition(
             "pending_off", "off", True,
             is_active_fn=lambda: False,
             start_fn=lambda d: None,
-            end_fn=lambda: ended.append(True),
             prevent_closed_fn=lambda: None,
             log_fn=self._noop_log,
         )
         self.assertTrue(ok)
         self.assertFalse(owned)
-        self.assertEqual(ended, [True])
+        self.assertEqual(ended, [])
 
     def test_start_failure_returns_not_ok(self):
         def boom(_d):
@@ -206,7 +202,6 @@ class HandleTransitionTests(unittest.TestCase):
             "pending_on", "on", False,
             is_active_fn=lambda: False,
             start_fn=boom,
-            end_fn=lambda: None,
             prevent_closed_fn=lambda: None,
             log_fn=self._noop_log,
         )
@@ -220,7 +215,6 @@ class HandleTransitionTests(unittest.TestCase):
             "pending_on", "on", False,
             is_active_fn=boom,
             start_fn=lambda d: None,
-            end_fn=lambda: None,
             prevent_closed_fn=lambda: None,
             log_fn=self._noop_log,
         )
@@ -235,7 +229,6 @@ class HandleTransitionTests(unittest.TestCase):
             "pending_off", "on", True,
             is_active_fn=lambda: True,
             start_fn=lambda d: started.append(d),
-            end_fn=lambda: None,
             prevent_closed_fn=lambda: prevented.append(True),
             log_fn=self._noop_log,
         )
@@ -251,7 +244,6 @@ class HandleTransitionTests(unittest.TestCase):
             "pending_on", "off", False,
             is_active_fn=lambda: False,
             start_fn=lambda d: None,
-            end_fn=lambda: ended.append(True),
             prevent_closed_fn=lambda: None,
             log_fn=self._noop_log,
         )
@@ -264,7 +256,6 @@ class HandleTransitionTests(unittest.TestCase):
             "off", "pending_on", False,
             is_active_fn=lambda: called.append("active") or False,
             start_fn=lambda d: called.append("start"),
-            end_fn=lambda: called.append("end"),
             prevent_closed_fn=lambda: called.append("prevent"),
             log_fn=self._noop_log,
         )
@@ -369,7 +360,7 @@ class IterateTests(unittest.TestCase):
         ctx = monitor.iterate(cfg, ctx, t + 20); self.assertEqual(ctx.monitor_state, "pending_off")
         ctx = monitor.iterate(cfg, ctx, t + 31); self.assertEqual(ctx.monitor_state, "off")
         self.assertFalse(ctx.owned_session)
-        self.assertTrue(monitor.amphetamine_ctl.end_session.called)
+        self.assertFalse(monitor.amphetamine_ctl.end_session.called)
 
     def test_pre_existing_session_not_owned(self):
         self._enter(self._patches(statuses=["working"], active=[True]))
@@ -418,20 +409,21 @@ class IterateTests(unittest.TestCase):
         self.assertEqual(ctx.monitor_state, "on")
         self.assertFalse(monitor.amphetamine_ctl.start_session.called)
 
-    def test_non_owned_session_ending_drops_to_off(self):
+    def test_non_owned_session_ending_starts_short_session(self):
         # Riding a pre-existing session that ends while agents still work:
-        # drop to off so we start our own next iteration.
+        # start a short session immediately, but still never end it later.
         self._enter(self._patches(statuses=["working"], remaining=-3))
         cfg = self._cfg()
         ctx = monitor.MonitorCtx(monitor_state="on", owned_session=False, last_transition=0.0)
         ctx = monitor.iterate(cfg, ctx, 1001.0)
-        self.assertEqual(ctx.monitor_state, "off")
-        self.assertFalse(ctx.owned_session)
+        self.assertEqual(ctx.monitor_state, "on")
+        self.assertTrue(ctx.owned_session)
+        self.assertTrue(monitor.amphetamine_ctl.start_session.called)
 
 
 class DisarmedTests(unittest.TestCase):
-    """armed=False (paused via the TUI): the daemon stays resident but releases
-    any owned session and idles, ignoring working agents entirely."""
+    """armed=False (paused via the TUI): the daemon stays resident but performs
+    no Amphetamine side effects, ignoring working agents entirely."""
 
     def _patches(self, *, statuses=None):
         status_vals = statuses if statuses is not None else []
@@ -465,14 +457,14 @@ class DisarmedTests(unittest.TestCase):
             armed=False,
         )
 
-    def test_disarmed_ends_owned_session(self):
+    def test_disarmed_does_not_end_owned_session(self):
         self._enter(self._patches(statuses=["working"]))
         cfg = self._cfg()
         ctx = monitor.MonitorCtx(monitor_state="on", owned_session=True, last_transition=0.0)
         ctx = monitor.iterate(cfg, ctx, 1001.0)
         self.assertEqual(ctx.monitor_state, "off")
         self.assertFalse(ctx.owned_session)
-        self.assertTrue(monitor.amphetamine_ctl.end_session.called)
+        self.assertFalse(monitor.amphetamine_ctl.end_session.called)
         # Disarmed must not start a session even though agents are working.
         self.assertFalse(monitor.amphetamine_ctl.start_session.called)
 
