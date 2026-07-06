@@ -207,8 +207,8 @@ screen (the TUI).
   Rationale: herdr 0.7.x does not inject plugin state paths, and the daemon runs both as a plugin action and as a standalone LaunchAgent.
   Date/Author: 2026-07-05 / implementer
 
-- Decision: Default to short (10-minute) sessions extended at the 5-minute mark.
-  Rationale: A short session that is repeatedly extended keeps the Mac awake continuously while agents work, but naturally expires within ~10 minutes if the monitor ever stops extending (crash, uninstall, bug). `HERDR_AMPHETAMINE_SESSION_MINUTES=0` restores infinite.
+- Decision: Default to short top-ups: add 1 minute when remaining time is below 2 minutes.
+  Rationale: A short session that is repeatedly topped up keeps the Mac awake continuously while agents work, but naturally expires quickly if the monitor ever stops extending (crash, uninstall, bug). `HERDR_AMPHETAMINE_TOP_UP_MINUTES=0` restores infinite.
   Date/Author: 2026-07-05 / implementer
 
 - Decision: Make `start_session` focus-preserving (activate only as a fallback).
@@ -224,7 +224,7 @@ screen (the TUI).
   Date/Author: 2026-07-05 / implementer
 
 - **Decision (2026-07-05, redesign): Persistent settings live in `config.json`, not plist `EnvironmentVariables`.**
-  Rationale: The TUI must change settings without reinstalling the LaunchAgent. The plist keeps only bootstrap environment (`HERDR_BIN_PATH` absolute, `HERDR_AMPHETAMINE_STATE_DIR`, interpreter, log/state paths). Tunables (poll, grace, session length, extend threshold, closed-display, app paths, `armed`) live in `config.json` and are re-read every poll. Env vars override the file when set, preserving backward compatibility and power-user escape hatches.
+  Rationale: The TUI must change settings without reinstalling the LaunchAgent. The plist keeps only bootstrap environment (`HERDR_BIN_PATH` absolute, `HERDR_AMPHETAMINE_STATE_DIR`, interpreter, log/state paths). Tunables (poll, grace, top-up amount, top-up threshold, closed-display, app paths, `armed`) live in `config.json` and are re-read every poll. Env vars override the file when set, preserving power-user escape hatches.
   Date/Author: 2026-07-05 / implementer
 
 - **Decision (2026-07-05, redesign): The TUI is interactive curses (stdlib) and never owns the Amphetamine session.**
@@ -395,8 +395,8 @@ DEFAULT_CONFIG = {
     "poll_seconds": 5.0,
     "start_grace_seconds": 5.0,
     "stop_grace_seconds": 30.0,
-    "session_minutes": 10.0,        # 0 = infinite
-    "extend_threshold_minutes": 5.0,
+    "top_up_minutes": 1.0,              # 0 = infinite
+    "top_up_threshold_minutes": 2.0,
     "herdr_bin_path": None,         # None -> HERDR_BIN_PATH env -> `which herdr`
     "amphetamine_app_path": "/Applications/Amphetamine.app",
     "prevent_closed_display_sleep": True,
@@ -620,8 +620,8 @@ First version uses only macOS built-ins and installed apps: `/usr/bin/python3`
       "poll_seconds": 5.0,
       "start_grace_seconds": 5.0,
       "stop_grace_seconds": 30.0,
-      "session_minutes": 10.0,            # 0 = infinite
-      "extend_threshold_minutes": 5.0,
+      "top_up_minutes": 1.0,             # 0 = infinite
+      "top_up_threshold_minutes": 2.0,
       "herdr_bin_path": null,             # null -> env HERDR_BIN_PATH -> `which herdr`
       "amphetamine_app_path": "/Applications/Amphetamine.app",
       "prevent_closed_display_sleep": true,

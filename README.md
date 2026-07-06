@@ -1,4 +1,4 @@
-# Amphetamine macOS Sleep Guard
+# herdr plugin: Amphetamine macOS Sleep Guard
 
 A macOS [herdr](https://github.com/gw31415/herdr) plugin that keeps the machine awake with [Amphetamine](https://apps.apple.com/us/app/amphetamine/id937984704) while agents are working.
 
@@ -6,7 +6,7 @@ It does one thing deliberately: when at least one herdr agent is `working`, it s
 
 ## Features
 
-- Resident per-user LaunchAgent (`RunAtLoad` + `KeepAlive`).
+- Session-scoped per-user LaunchAgent, installed once and started/stopped with agent count.
 - Interactive TUI for status, settings, install/uninstall, and enable/pause.
 - Flicker-resistant state machine with start/stop grace periods.
 - Short finite sessions that are extended only while agents work.
@@ -23,20 +23,27 @@ It does one thing deliberately: when at least one herdr agent is `working`, it s
 
 ## Install
 
-From this repository root:
+### From GitHub (recommended)
+
+```sh
+herdr plugin install gw31415/herdr-amphetamine-macos
+herdr plugin action invoke sync-launchagent --plugin amphetamine-macos
+```
+
+### From a local clone (developers)
 
 ```sh
 herdr plugin link "$PWD"
-herdr plugin action invoke install-launchagent --plugin local.amphetamine-macos
+herdr plugin action invoke sync-launchagent --plugin amphetamine-macos
 ```
 
 The installer:
 
 - resolves the `herdr` binary path for the LaunchAgent environment,
-- seeds `~/Library/Application Support/herdr-amphetamine/config.json`,
-- writes `~/Library/LaunchAgents/com.herdr.amphetamine.monitor.plist`,
-- starts the resident monitor,
-- writes logs under `~/Library/Logs/herdr-amphetamine/`.
+- seeds `~/Library/Application Support/herdr-amphetamine/<session>/config.json`,
+- writes `~/Library/LaunchAgents/com.herdr.amphetamine.monitor.<session>.plist`,
+- starts this session's monitor when agents exist,
+- writes logs under `~/Library/Logs/herdr-amphetamine/<session>/`.
 
 The first real Amphetamine command may trigger a macOS Automation permission prompt. Allow the launching process to control Amphetamine.
 
@@ -45,9 +52,9 @@ The first real Amphetamine command may trigger a macOS Automation permission pro
 Open the TUI:
 
 ```sh
-herdr plugin action invoke tui --plugin local.amphetamine-macos
+herdr plugin action invoke tui --plugin amphetamine-macos
 # or
-herdr plugin pane open --plugin local.amphetamine-macos --entrypoint tui
+herdr plugin pane open --plugin amphetamine-macos --entrypoint tui
 # or
 python3 scripts/tui.py
 ```
@@ -75,7 +82,7 @@ Useful keys:
 Non-interactive status:
 
 ```sh
-herdr plugin action invoke status --plugin local.amphetamine-macos
+herdr plugin action invoke status --plugin amphetamine-macos
 # or
 python3 scripts/monitor.py --status
 ```
@@ -83,6 +90,9 @@ python3 scripts/monitor.py --status
 ## Behavior
 
 The monitor observes `herdr agent list` and treats only exact `working` statuses as active work.
+`sync-launchagent` installs this session's LaunchAgent if needed, starts it when
+agent count is nonzero, and stops it when the count is zero. A running monitor
+also stops its own LaunchAgent after it observes zero agents.
 
 ```text
 off --working--> pending_on --(start grace)--> on
@@ -94,8 +104,10 @@ Defaults:
 - poll every 5 seconds,
 - require 5 seconds of sustained work before starting,
 - require 30 seconds of sustained idle before leaving `on`,
-- start/top up a 2-minute Amphetamine session,
-- top up when remaining time is below 3 minutes.
+- start a 1-minute Amphetamine session,
+- when remaining time is below 2 minutes, add 1 minute by resetting the
+  Amphetamine session duration to the current remaining time plus 1 minute
+  (rounded up to whole minutes).
 
 Important safety rule: the monitor never calls Amphetamine's `end session`. `armed=false`, idle agents, daemon shutdown, and uninstall all stop plugin activity without cancelling the user's manual Amphetamine session.
 
@@ -104,50 +116,42 @@ Important safety rule: the monitor never calls Amphetamine's `end session`. `arm
 Persistent config lives at:
 
 ```text
-~/Library/Application Support/herdr-amphetamine/config.json
+~/Library/Application Support/herdr-amphetamine/<session>/config.json
 ```
 
 Edit it via the TUI when possible. The daemon reloads config every poll and on best-effort `SIGHUP` from the TUI.
 
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `armed` | `true` | enable/pause the guard |
-| `poll_seconds` | `5` | seconds between observations |
-| `start_grace_seconds` | `5` | sustained work required before starting |
-| `stop_grace_seconds` | `30` | sustained idle required before leaving `on` |
-| `session_minutes` | `2` | Amphetamine session length; `0` means infinite |
-| `extend_threshold_minutes` | `3` | top up when remaining time is below this |
-| `prevent_closed_display_sleep` | `true` | enable Amphetamine closed-display mode |
-| `display_sleep_allowed` | `false` | allow display sleep during sessions |
-| `herdr_bin_path` | `null` | `null` means env/PATH resolution |
-| `amphetamine_app_path` | `/Applications/Amphetamine.app` | Amphetamine app bundle path |
+| Key | Default | Environment override | Meaning |
+| --- | --- | --- | --- |
+| `armed` | `true` | — | enable/pause the guard |
+| `poll_seconds` | `5` | `HERDR_AMPHETAMINE_POLL_SECONDS` | seconds between observations |
+| `start_grace_seconds` | `5` | `HERDR_AMPHETAMINE_START_GRACE_SECONDS` | sustained work required before starting |
+| `stop_grace_seconds` | `30` | `HERDR_AMPHETAMINE_STOP_GRACE_SECONDS` | sustained idle required before leaving `on` |
+| `top_up_minutes` | `1` | `HERDR_AMPHETAMINE_TOP_UP_MINUTES` | minutes to add on each top-up; also the initial session length; `0` means infinite |
+| `top_up_threshold_minutes` | `2` | `HERDR_AMPHETAMINE_TOP_UP_THRESHOLD_MINUTES` | top up when remaining time is below this |
+| `prevent_closed_display_sleep` | `true` | — | enable Amphetamine closed-display mode |
+| `display_sleep_allowed` | `false` | — | allow display sleep during sessions |
+| `herdr_bin_path` | `null` | `HERDR_BIN_PATH` | `null` means env/PATH resolution |
+| `amphetamine_app_path` | `/Applications/Amphetamine.app` | `AMPHETAMINE_APP_PATH` | Amphetamine app bundle path |
 
-Environment overrides:
-
-- `HERDR_AMPHETAMINE_POLL_SECONDS`
-- `HERDR_AMPHETAMINE_START_GRACE_SECONDS`
-- `HERDR_AMPHETAMINE_STOP_GRACE_SECONDS`
-- `HERDR_AMPHETAMINE_SESSION_MINUTES`
-- `HERDR_AMPHETAMINE_EXTEND_THRESHOLD_MINUTES`
-- `HERDR_BIN_PATH`
-- `AMPHETAMINE_APP_PATH`
-- `HERDR_AMPHETAMINE_STATE_DIR`
+`HERDR_AMPHETAMINE_STATE_DIR` selects the config/state directory and is pinned
+by the LaunchAgent for the current herdr session.
 
 ## Uninstall
 
 ```sh
-herdr plugin action invoke uninstall-launchagent --plugin local.amphetamine-macos
-herdr plugin unlink local.amphetamine-macos
+herdr plugin action invoke uninstall-launchagent --plugin amphetamine-macos
+herdr plugin unlink amphetamine-macos
 ```
 
-The uninstall action unloads/removes the LaunchAgent. It does not end Amphetamine sessions.
+The uninstall action unloads/removes only the current session's LaunchAgent. It does not end Amphetamine sessions.
 
 ## Troubleshooting
 
 - Automation denied: grant permission in System Settings -> Privacy & Security -> Automation.
 - Lid-closed sleep still happens: complete Amphetamine's one-time closed-display prompt/setup; see `docs/manual-test.md`.
-- Daemon not running: check `launchctl print gui/$UID/com.herdr.amphetamine.monitor` and `~/Library/Logs/herdr-amphetamine/monitor.err.log`.
-- TUI says daemon not detected: run the install action (`i` in the TUI or `install-launchagent`).
+- Daemon not running: run `sync-launchagent`, or use `i` in the TUI for the current session.
+- TUI says daemon not detected with agents present: run the sync action.
 
 ## Development
 

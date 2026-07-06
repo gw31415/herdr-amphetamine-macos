@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.herdr.amphetamine.monitor</string>
+    <string>__LABEL__</string>
     <key>ProgramArguments</key>
     <array>
         <string>__PYTHON__</string>
@@ -17,9 +17,9 @@
     <key>ThrottleInterval</key>
     <integer>10</integer>
     <key>StandardOutPath</key>
-    <string>__HOME__/Library/Logs/herdr-amphetamine/monitor.out.log</string>
+    <string>__LOG_DIR__/monitor.out.log</string>
     <key>StandardErrorPath</key>
-    <string>__HOME__/Library/Logs/herdr-amphetamine/monitor.err.log</string>
+    <string>__LOG_DIR__/monitor.err.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <!-- Bootstrap only: tunables live in config.json (TUI-editable) and are
@@ -27,8 +27,16 @@
              path (a user LaunchAgent has a minimal PATH) and the state dir. -->
         <key>HERDR_BIN_PATH</key>
         <string>__HERDR_BIN__</string>
+        <key>HERDR_SOCKET_PATH</key>
+        <string>__HERDR_SOCKET__</string>
         <key>HERDR_AMPHETAMINE_STATE_DIR</key>
-        <string>__HOME__/Library/Application Support/herdr-amphetamine</string>
+        <string>__STATE_DIR__</string>
+        <key>HERDR_AMPHETAMINE_PLIST_PATH</key>
+        <string>__PLIST__</string>
+        <key>HERDR_AMPHETAMINE_LABEL</key>
+        <string>__LABEL__</string>
+        <key>HERDR_AMPHETAMINE_AUTO_UNLOAD</key>
+        <string>1</string>
     </dict>
 </dict>
 </plist>

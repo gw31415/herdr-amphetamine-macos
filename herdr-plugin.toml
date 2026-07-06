@@ -1,12 +1,12 @@
-id = "local.amphetamine-macos"
+id = "amphetamine-macos"
 name = "Amphetamine macOS Sleep Guard"
 version = "0.2.0"
 min_herdr_version = "0.7.0"
-description = "Resident LaunchAgent keeps macOS awake with Amphetamine while herdr agents work; controlled via an interactive TUI."
+description = "Session-scoped LaunchAgent keeps macOS awake with Amphetamine while herdr agents work; controlled via an interactive TUI."
 platforms = ["macos"]
 
-# The monitor runs as a resident LaunchAgent (installed once with the
-# `install-launchagent` action). All control — enable/pause (arm/disarm),
+# The monitor runs as a session-scoped LaunchAgent (sync with the
+# `sync-launchagent` action). All control — enable/pause (arm/disarm),
 # settings, and status — happens in the interactive TUI (`tui` action / pane).
 [[actions]]
 id = "tui"
@@ -21,14 +21,20 @@ contexts = ["workspace"]
 command = ["python3", "scripts/monitor.py", "--status"]
 
 [[actions]]
+id = "sync-launchagent"
+title = "Sync this session LaunchAgent to current agent count"
+contexts = ["workspace"]
+command = ["python3", "scripts/sync_launchagent.py"]
+
+[[actions]]
 id = "install-launchagent"
-title = "Install the resident monitor LaunchAgent"
+title = "Install this session monitor LaunchAgent"
 contexts = ["workspace"]
 command = ["python3", "scripts/install_launchagent.py"]
 
 [[actions]]
 id = "uninstall-launchagent"
-title = "Uninstall the monitor LaunchAgent"
+title = "Uninstall this session monitor LaunchAgent"
 contexts = ["workspace"]
 command = ["python3", "scripts/uninstall_launchagent.py"]
 

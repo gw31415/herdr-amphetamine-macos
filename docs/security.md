@@ -10,7 +10,8 @@
   AppleScript.
 - **herdr**, via `herdr agent list` (read-only JSON). The monitor parses only the
   `agent_status` field.
-- **The user LaunchAgent** `com.herdr.amphetamine.monitor`, installed under
+- **A session-scoped user LaunchAgent** named
+  `com.herdr.amphetamine.monitor.<session>`, installed under
   `~/Library/LaunchAgents/` (per-user, no root, no admin prompt).
 
 ## What it does NOT do
@@ -26,6 +27,9 @@
 
 - Runs entirely as the logged-in user. The LaunchAgent is per-user
   (`~/Library/LaunchAgents/`), so installation needs no administrator password.
+- Each herdr session gets its own LaunchAgent label, state directory, and log
+  directory. Install/uninstall/sync commands only touch the current session's
+  plist.
 - The one privilege it requires is **macOS Automation** consent for the
   launching process to control Amphetamine. macOS gates this with a one-time
   prompt; the plugin never attempts to bypass it.
@@ -43,6 +47,6 @@
 
 ## Logs
 
-`~/Library/Logs/herdr-amphetamine/monitor.{out,err}.log` contain timestamped
+`~/Library/Logs/herdr-amphetamine/<session>/monitor.{out,err}.log` contain timestamped
 state transitions and observations. They may include agent status counts but no
 command content or secrets.

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Interactive (curses) TUI for the Amphetamine Sleep Guard.
 
-This is the human control surface for the resident LaunchAgent daemon. It:
+This is the human control surface for the session LaunchAgent daemon. It:
 
   * shows live status (monitor state, working agents, Amphetamine session),
   * arms / disarms the guard (enable / pause) by flipping `armed` in config.json,
   * edits every setting (poll, grace, session, paths, closed-display, ...),
-  * installs / uninstalls the resident LaunchAgent,
+  * installs / uninstalls this session's LaunchAgent,
   * tails the daemon's recent log lines.
 
 It NEVER starts or ends an Amphetamine session directly — session ownership stays
@@ -35,14 +35,17 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import amphetamine_ctl  # noqa: E402
 import config  # noqa: E402
+import launchagent  # noqa: E402
 import monitor  # noqa: E402
+
+if "HERDR_AMPHETAMINE_STATE_DIR" not in os.environ:
+    os.environ["HERDR_AMPHETAMINE_STATE_DIR"] = str(launchagent.paths()["state_dir"])
 
 try:  # curses is optional; the non-TTY path does not need it
     import curses
 except ImportError:  # pragma: no cover - extremely rare on macOS
     curses = None
 
-LOG_PATH = Path.home() / "Library" / "Logs" / "herdr-amphetamine" / "monitor.out.log"
 REFRESH_MS = 1000  # curses input timeout; one redraw/keystroke poll per second
 LOG_TAIL = 8
 
@@ -72,8 +75,8 @@ NUMERIC_KEYS = {
     "p": ("poll_seconds", "poll seconds"),
     "g": ("start_grace_seconds", "start grace seconds"),
     "s": ("stop_grace_seconds", "stop grace seconds"),
-    "m": ("session_minutes", "session minutes (0 = infinite)"),
-    "e": ("extend_threshold_minutes", "extend threshold minutes"),
+    "m": ("top_up_minutes", "top-up minutes (0 = infinite)"),
+    "e": ("top_up_threshold_minutes", "top-up threshold minutes"),
 }
 PATH_KEYS = {
     "b": ("herdr_bin_path", "herdr bin path (blank = env/PATH)"),
@@ -147,24 +150,31 @@ def _agents(herdr_bin):
 
 
 def _tail(n=LOG_TAIL):
+    log_path = launchagent.paths()["log_dir"] / "monitor.out.log"
     try:
-        if not LOG_PATH.exists():
+        if not log_path.exists():
             return []
-        return LOG_PATH.read_text(errors="replace").splitlines()[-n:]
+        return log_path.read_text(errors="replace").splitlines()[-n:]
     except OSError:
         return []
 
 
-def _daemon_running() -> bool:
-    """Best-effort: is the resident daemon process alive?"""
+def _daemon_pid() -> Optional[int]:
+    """Best-effort: return this session daemon's pid."""
     try:
         proc = subprocess.run(
-            ["pgrep", "-f", "monitor.py --daemon"],
+            ["launchctl", "print", f"gui/{os.getuid()}/{launchagent.label()}"],
             capture_output=True, text=True,
         )
-        return bool(proc.stdout.strip())
+        for line in proc.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("pid = "):
+                return int(line.removeprefix("pid = ").strip())
     except (OSError, subprocess.SubprocessError):
-        return False
+        pass
+    except ValueError:
+        pass
+    return None
 
 
 def _nudge_daemon() -> None:
@@ -174,19 +184,9 @@ def _nudge_daemon() -> None:
     every poll (default 5s) anyway.
     """
     try:
-        proc = subprocess.run(
-            ["pgrep", "-f", "monitor.py --daemon"],
-            capture_output=True, text=True,
-        )
-        for line in proc.stdout.split():
-            try:
-                pid = int(line)
-            except ValueError:
-                continue
-            try:
-                os.kill(pid, signal.SIGHUP)
-            except OSError:
-                pass
+        pid = _daemon_pid()
+        if pid is not None:
+            os.kill(pid, signal.SIGHUP)
     except (OSError, subprocess.SubprocessError):
         pass
 
@@ -206,7 +206,8 @@ def collect():
         "working": working,
         "herdr_ok": herdr_ok,
         "tail": _tail(),
-        "daemon": _daemon_running(),
+        "daemon": _daemon_pid() is not None,
+        "log_path": launchagent.paths()["log_dir"] / "monitor.out.log",
         "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
 
@@ -360,8 +361,8 @@ def render(stdscr, d, footer_msg):
         sa = "yes" + (" (managed/top-up)" if owned else "")
     else:
         sa = "no"
-    sess = (f"{cfg.session_minutes:g}m (extend at {cfg.extend_threshold_minutes:g}m)"
-            if cfg.session_minutes else "infinite")
+    sess = (f"add {cfg.top_up_minutes:g}m below {cfg.top_up_threshold_minutes:g}m"
+            if cfg.top_up_minutes else "infinite")
     daemon = "running" if d["daemon"] else "not detected"
 
     _row(stdscr, y, "Monitor state:", mstate); y += 1
@@ -393,8 +394,8 @@ def render(stdscr, d, footer_msg):
         ("[p]", "poll (s):", f"{cd.get('poll_seconds'):g}", 0),
         ("[g]", "start grace (s):", f"{cd.get('start_grace_seconds'):g}", 0),
         ("[s]", "stop grace (s):", f"{cd.get('stop_grace_seconds'):g}", 0),
-        ("[m]", "session (min):", f"{cd.get('session_minutes'):g}", 0),
-        ("[e]", "extend at (min):", f"{cd.get('extend_threshold_minutes'):g}", 0),
+        ("[m]", "top-up (min):", f"{cd.get('top_up_minutes'):g}", 0),
+        ("[e]", "top-up below (min):", f"{cd.get('top_up_threshold_minutes'):g}", 0),
         ("[b]", "herdr bin:", str(cd.get("herdr_bin_path") or "(env/PATH)"), 0),
         ("[a]", "Amphetamine:", str(cd.get("amphetamine_app_path")), 0),
     ]
@@ -407,7 +408,7 @@ def render(stdscr, d, footer_msg):
     if y < h:
         stdscr.addnstr(y, 0, dash, w); y += 1
     if y < h:
-        stdscr.addnstr(y, 0, f" Recent  ({LOG_PATH})", w, bold); y += 1
+        stdscr.addnstr(y, 0, f" Recent  ({d['log_path']})", w, bold); y += 1
     if d["tail"]:
         for line in d["tail"]:
             if y >= h - 2:
@@ -437,7 +438,7 @@ def help_overlay(stdscr):
         "  d       toggle display-sleep-allowed",
         "  p g s m e   edit poll / start grace / stop grace / session / extend",
         "  b / a   edit herdr bin / Amphetamine app path",
-        "  i / u   install / uninstall the resident LaunchAgent",
+        "  i / u   install / uninstall this session's LaunchAgent",
         "  r       refresh now",
         "  q       quit",
         "",
@@ -607,7 +608,8 @@ def _run(stdscr):
                 "cfg": monitor.load_config(), "cfg_dict": config.load_resolved(),
                 "state": monitor.default_state(), "available": False, "active": None,
                 "total": 0, "working": 0, "herdr_ok": False, "tail": [],
-                "daemon": False, "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "daemon": False, "log_path": launchagent.paths()["log_dir"] / "monitor.out.log",
+                "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
             }
             footer = f"collect error: {exc}"
         try:

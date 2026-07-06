@@ -1,35 +1,31 @@
 #!/usr/bin/env python3
-"""Install (or refresh) the user LaunchAgent that runs the Amphetamine monitor.
+"""Install (or refresh) this session's Amphetamine monitor LaunchAgent.
 
 Renders launchagents/com.herdr.amphetamine.monitor.plist.template with absolute
-paths and writes it to ~/Library/LaunchAgents/, then (re)loads it with launchctl.
+paths, writes it to ~/Library/LaunchAgents/, and registers it with launchctl.
 
-Idempotent: running twice replaces the plist and restarts the service. Safe to
-run even if a previous service is loaded; bootout errors are ignored.
+Idempotent for the current herdr session; other session LaunchAgents use
+different labels and paths.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config  # noqa: E402
-
-LABEL = "com.herdr.amphetamine.monitor"
-DOMAIN = f"gui/{os.getuid()}"
-
+import launchagent  # noqa: E402
 
 def plugin_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
 def template_path() -> Path:
-    return plugin_root() / "launchagents" / f"{LABEL}.plist.template"
+    return plugin_root() / "launchagents" / "com.herdr.amphetamine.monitor.plist.template"
 
 
 def resolve_herdr_bin() -> str:
@@ -49,33 +45,36 @@ def resolve_herdr_bin() -> str:
     return str(Path(herdr).resolve())
 
 
-def render(home_dir: Path) -> str:
+def render(home_dir: Path, p: dict) -> str:
     python = os.environ.get("HERDR_AMPHETAMINE_PYTHON", "/usr/bin/python3")
+    socket_path = os.environ.get("HERDR_SOCKET_PATH", "")
     text = template_path().read_text()
     return (
         text
+        .replace("__LABEL__", p["label"])
         .replace("__PYTHON__", python)
         .replace("__PLUGIN_ROOT__", str(plugin_root()))
         .replace("__HOME__", str(home_dir))
+        .replace("__STATE_DIR__", str(p["state_dir"]))
+        .replace("__LOG_DIR__", str(p["log_dir"]))
+        .replace("__PLIST__", str(p["plist"]))
         .replace("__HERDR_BIN__", resolve_herdr_bin())
+        .replace("__HERDR_SOCKET__", socket_path)
     )
-
-
-def run(cmd: list) -> tuple:
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    return proc.returncode, (proc.stderr or "").strip()
 
 
 def main() -> int:
     home_dir = Path.home()
+    p = launchagent.paths(home_dir)
     launch_dir = home_dir / "Library" / "LaunchAgents"
-    log_dir = home_dir / "Library" / "Logs" / "herdr-amphetamine"
-    state_dir = home_dir / "Library" / "Application Support" / "herdr-amphetamine"
-    plist_dest = launch_dir / f"{LABEL}.plist"
+    log_dir = p["log_dir"]
+    state_dir = p["state_dir"]
+    plist_dest = p["plist"]
 
     launch_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["HERDR_AMPHETAMINE_STATE_DIR"] = str(state_dir)
 
     # Seed config.json with defaults if absent so the TUI has a file to edit and
     # the daemon starts armed with the documented tunables. Never overwrite an
@@ -84,29 +83,23 @@ def main() -> int:
         config.save_config_file(config.default_config())
         print(f"[install] wrote default config: {config.config_path()}")
 
-    plist_dest.write_text(render(home_dir))
+    plist_dest.write_text(render(home_dir, p))
     print(f"[install] wrote plist: {plist_dest}")
 
-    # Unload any previously-loaded agent; ignore errors if it was not loaded.
-    code, err = run(["launchctl", "bootout", DOMAIN, str(plist_dest)])
-    if code == 0:
-        print("[install] unloaded previous LaunchAgent.")
-    elif err:
-        print(f"[install] bootout (ignored if not loaded): {err}")
-
-    code, err = run(["launchctl", "bootstrap", DOMAIN, str(plist_dest)])
+    launchagent.run(["launchctl", "bootout", launchagent.domain(), str(plist_dest)])
+    code, err = launchagent.run(["launchctl", "bootstrap", launchagent.domain(), str(plist_dest)])
     if code != 0 and err:
-        print(f"[install] bootstrap note: {err}", file=sys.stderr)
+        print(f"[install] bootstrap note (ignored if already loaded): {err}", file=sys.stderr)
 
-    run(["launchctl", "kickstart", "-k", f"{DOMAIN}/{LABEL}"])
-    print(f"[install] started LaunchAgent: {LABEL}")
+    launchagent.stop(p["label"])
+    print(f"[install] registered LaunchAgent: {p['label']} (stopped)")
 
     print(f"[install] stdout log: {log_dir}/monitor.out.log")
     print(f"[install] stderr log: {log_dir}/monitor.err.log")
     print(f"[install] state file: {state_dir}/state.json")
     print("[install] verify with:")
-    print("    launchctl print gui/$UID/com.herdr.amphetamine.monitor")
-    print("    tail -n 50 ~/Library/Logs/herdr-amphetamine/monitor.out.log")
+    print(f"    launchctl print gui/$UID/{p['label']}")
+    print(f"    tail -n 50 {log_dir}/monitor.out.log")
     print("    python3 scripts/monitor.py --status")
     return 0
 

@@ -5,7 +5,7 @@ config.json load/save/validate, and armed/disarmed behavior. The steps below
 validate real behavior on a Mac. Run them from the plugin root:
 
 ```sh
-cd /Users/ama/herdr_plugin_Amphetamine_macos(仮)/herdr-amphetamine-macos
+cd herdr-amphetamine-macos
 ```
 
 ## 0. Unit tests (no Amphetamine/herdr side effects)
@@ -26,8 +26,8 @@ Expect: all tests pass, including `test_sustained_working_starts_session`,
 
 ```sh
 python3 scripts/tui.py
-#   or:  herdr plugin action invoke tui --plugin local.amphetamine-macos
-#   or:  herdr plugin pane open --plugin local.amphetamine-macos --entrypoint tui
+#   or:  herdr plugin action invoke tui --plugin amphetamine-macos
+#   or:  herdr plugin pane open --plugin amphetamine-macos --entrypoint tui
 ```
 
 Expect: a live panel showing ARMED/DISARMED, the monitor state (ON / starting /
@@ -58,9 +58,9 @@ exits, like `monitor.py --status`.
 The first call triggers a macOS **Automation** permission prompt. Allow it.
 `start_session` is focus-preserving: it tries `start new session` *without*
 activating Amphetamine first, and only activates as a fallback if Amphetamine
-ignores the command (idle/app-nap). The default session length is 2 minutes;
-pass `duration_minutes=` to override. The monitor adds 2 minutes whenever agents
-are working and time remaining drops below the extend threshold (default 3). It
+ignores the command (idle/app-nap). The default session length is 1 minute;
+pass `duration_minutes=` to override. The monitor adds 1 minute whenever agents
+are working and time remaining drops below the extend threshold (default 2). It
 does not end the session when agents go idle.
 
 ```sh
@@ -93,7 +93,7 @@ Record the exact lines you observe (they vary by Amphetamine version) in
 
 `prevent_sleep_when_display_closed()` calls `enable closed display mode`. The
 first time, Amphetamine may show a warning prompt. To silence it permanently
-(recommended so the resident LaunchAgent can run unattended):
+(recommended so the session LaunchAgent can run unattended):
 
 1. Open Amphetamine → **Preferences → Sessions**.
 2. Find **"Allow System to Sleep When Display is Closed"** and toggle it off.
@@ -116,16 +116,15 @@ python3 scripts/monitor.py --status
 
 With no working agents (all `idle`/`done`/`blocked`), expect `0 working`.
 
-## 3. Resident LaunchAgent (the supervisor)
+## 3. Session LaunchAgent
 
-The monitor runs as a resident user LaunchAgent. Install once (seeds a default
-`config.json`, writes the plist, loads it):
+Sync the current herdr session. If this session has agents, this seeds a default
+`config.json`, writes this session's plist, and loads it:
 
 ```sh
-python3 scripts/install_launchagent.py
-launchctl print gui/$UID/com.herdr.amphetamine.monitor | head   # state = running
+python3 scripts/sync_launchagent.py
+python3 scripts/install_launchagent.py                         # force install for manual testing
 sleep 8
-tail -n 20 ~/Library/Logs/herdr-amphetamine/monitor.out.log     # startup + observations
 python3 scripts/monitor.py --status                             # live state
 ```
 
@@ -136,8 +135,7 @@ The installer resolves herdr to an absolute path and bakes it into the plist as
 Persistence check (pause survives a restart):
 
 ```sh
-# Disarm via the TUI (Space), then:
-launchctl kickstart -k gui/$UID/com.herdr.amphetamine.monitor   # restart the daemon
+# Disarm via the TUI (Space), then press i to reinstall/restart this session's daemon.
 # The daemon comes back up DISARMED (reads config.json) and starts no session.
 ```
 
@@ -146,12 +144,11 @@ To remove:
 ```sh
 python3 scripts/uninstall_launchagent.py            # keeps logs/state
 #   python3 scripts/uninstall_launchagent.py --cleanup   # also removes them
-launchctl print gui/$UID/com.herdr.amphetamine.monitor   # -> "Could not find service"
 ```
 
 ## 4. End-to-end
 
-1. Install the LaunchAgent (step 3) and ensure no working agents are present;
+1. Install/sync the LaunchAgent (step 3) and ensure no working agents are present;
    confirm Amphetamine has no active session.
 2. Start a real herdr agent that enters `working`.
 3. Within `poll + start_grace` (≈10s by default), confirm:

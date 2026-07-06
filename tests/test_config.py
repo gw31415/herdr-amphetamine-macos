@@ -43,10 +43,12 @@ class DefaultsTests(_IsolatedStateDir):
 
     def test_default_config_has_all_keys(self):
         for key in ("armed", "poll_seconds", "start_grace_seconds", "stop_grace_seconds",
-                    "session_minutes", "extend_threshold_minutes", "herdr_bin_path",
+                    "top_up_minutes", "top_up_threshold_minutes", "herdr_bin_path",
                     "amphetamine_app_path", "prevent_closed_display_sleep",
                     "display_sleep_allowed"):
             self.assertIn(key, config.default_config())
+        self.assertNotIn("session_minutes", config.default_config())
+        self.assertNotIn("extend_threshold_minutes", config.default_config())
 
 
 class LoadTests(_IsolatedStateDir):
@@ -54,8 +56,8 @@ class LoadTests(_IsolatedStateDir):
         cfg = config.load_config_file()
         self.assertTrue(cfg["armed"])
         self.assertEqual(cfg["poll_seconds"], 5.0)
-        self.assertEqual(cfg["session_minutes"], 2.0)
-        self.assertEqual(cfg["extend_threshold_minutes"], 3.0)
+        self.assertEqual(cfg["top_up_minutes"], 1.0)
+        self.assertEqual(cfg["top_up_threshold_minutes"], 2.0)
         self.assertEqual(cfg["amphetamine_app_path"], "/Applications/Amphetamine.app")
 
     def test_load_defaults_when_corrupt(self):
@@ -75,11 +77,11 @@ class LoadTests(_IsolatedStateDir):
 
 class SaveValidateTests(_IsolatedStateDir):
     def test_save_then_load_roundtrip(self):
-        config.save_config_file({"armed": False, "poll_seconds": 7, "session_minutes": 20})
+        config.save_config_file({"armed": False, "poll_seconds": 7, "top_up_minutes": 20})
         cfg = config.load_config_file()
         self.assertFalse(cfg["armed"])
         self.assertEqual(cfg["poll_seconds"], 7.0)
-        self.assertEqual(cfg["session_minutes"], 20.0)
+        self.assertEqual(cfg["top_up_minutes"], 20.0)
         # Untouched keys fall back to defaults.
         self.assertEqual(cfg["stop_grace_seconds"], 30.0)
 
@@ -91,10 +93,10 @@ class SaveValidateTests(_IsolatedStateDir):
 
     def test_validate_clamps_negatives_and_bad_types(self):
         out = config.validate({"poll_seconds": -5, "stop_grace_seconds": "oops",
-                               "session_minutes": -1})
+                               "top_up_minutes": -1})
         self.assertGreaterEqual(out["poll_seconds"], 1.0)   # poll clamped to >=1
         self.assertEqual(out["stop_grace_seconds"], 30.0)    # bad -> default
-        self.assertEqual(out["session_minutes"], 0.0)        # clamped to >=0
+        self.assertEqual(out["top_up_minutes"], 0.0)         # clamped to >=0
 
     def test_validate_bool_strings(self):
         out = config.validate({"armed": "off", "display_sleep_allowed": "yes"})
@@ -109,14 +111,16 @@ class SaveValidateTests(_IsolatedStateDir):
 
 class EnvOverrideTests(_IsolatedStateDir):
     def test_env_overrides_file_when_set(self):
-        config.save_config_file({"poll_seconds": 5, "session_minutes": 10})
+        config.save_config_file({"poll_seconds": 5, "top_up_minutes": 10})
         os.environ["HERDR_AMPHETAMINE_POLL_SECONDS"] = "99"
-        os.environ["HERDR_AMPHETAMINE_SESSION_MINUTES"] = "0"
+        os.environ["HERDR_AMPHETAMINE_TOP_UP_MINUTES"] = "0"
+        os.environ["HERDR_AMPHETAMINE_TOP_UP_THRESHOLD_MINUTES"] = "4"
         os.environ["HERDR_BIN_PATH"] = "/custom/herdr"
         os.environ["AMPHETAMINE_APP_PATH"] = "/Apps/Amphetamine.app"
         resolved = config.load_resolved()
         self.assertEqual(resolved["poll_seconds"], 99.0)
-        self.assertEqual(resolved["session_minutes"], 0.0)
+        self.assertEqual(resolved["top_up_minutes"], 0.0)
+        self.assertEqual(resolved["top_up_threshold_minutes"], 4.0)
         self.assertEqual(resolved["herdr_bin_path"], "/custom/herdr")
         self.assertEqual(resolved["amphetamine_app_path"], "/Apps/Amphetamine.app")
 

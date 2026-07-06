@@ -15,16 +15,20 @@ import subprocess
 import sys
 from pathlib import Path
 
-LABEL = "com.herdr.amphetamine.monitor"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import launchagent  # noqa: E402
+
 DOMAIN = f"gui/{os.getuid()}"
 
 
 def main() -> int:
     cleanup = "--cleanup" in sys.argv
     home_dir = Path.home()
-    plist_dest = home_dir / "Library" / "LaunchAgents" / f"{LABEL}.plist"
-    log_dir = home_dir / "Library" / "Logs" / "herdr-amphetamine"
-    state_dir = home_dir / "Library" / "Application Support" / "herdr-amphetamine"
+    p = launchagent.paths(home_dir)
+    plist_dest = p["plist"]
+    log_dir = p["log_dir"]
+    state_dir = p["state_dir"]
 
     proc = subprocess.run(
         ["launchctl", "bootout", DOMAIN, str(plist_dest)],
@@ -33,7 +37,7 @@ def main() -> int:
     )
     msg = (proc.stderr or "").strip()
     if proc.returncode == 0:
-        print(f"[uninstall] unloaded LaunchAgent: {LABEL}")
+        print(f"[uninstall] unloaded LaunchAgent: {p['label']}")
     elif msg:
         print(f"[uninstall] bootout (ignored if not loaded): {msg}")
 

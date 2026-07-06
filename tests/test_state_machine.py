@@ -36,6 +36,36 @@ class AnyAgentWorkingTests(unittest.TestCase):
         self.assertFalse(monitor.any_agent_working(["Working"]))
 
 
+class HerdrObservationTests(unittest.TestCase):
+    def setUp(self):
+        os.environ.pop("HERDR_SOCKET_PATH", None)
+
+    def tearDown(self):
+        os.environ.pop("HERDR_SOCKET_PATH", None)
+
+    def test_socket_response_parsing(self):
+        data = {"result": {"agents": [{"agent_status": "working"}, {}, {"agent_status": "idle"}]}}
+        self.assertEqual(
+            monitor._agent_statuses_from_response(data),
+            ["working", "unknown", "idle"],
+        )
+
+    def test_socket_success_skips_herdr_cli(self):
+        os.environ["HERDR_SOCKET_PATH"] = "/tmp/herdr.sock"
+        with mock.patch.object(
+            monitor, "_get_agent_statuses_from_socket", return_value=["working"]
+        ) as sock, mock.patch.object(monitor.subprocess, "run") as run:
+            self.assertEqual(monitor.get_agent_statuses("herdr"), ["working"])
+        sock.assert_called_once_with("/tmp/herdr.sock")
+        run.assert_not_called()
+
+    def test_missing_socket_path_does_not_run_herdr_cli(self):
+        with mock.patch.object(monitor.subprocess, "run") as run:
+            with self.assertRaises(monitor.HerdrError):
+                monitor.get_agent_statuses("herdr")
+        run.assert_not_called()
+
+
 class NextStateTests(unittest.TestCase):
     def test_off_to_pending_on(self):
         self.assertEqual(monitor.next_monitor_state("off", True, 0, SG, STG), "pending_on")
@@ -304,6 +334,8 @@ class IterateTests(unittest.TestCase):
             start_grace=5.0,
             stop_grace=30.0,
             state_path=Path("/tmp/ignored"),
+            top_up_minutes=1.0,
+            top_up_threshold_minutes=2.0,
         )
 
     def _patches(self, *, available=True, active=False, statuses=None, remaining=600):
@@ -391,9 +423,9 @@ class IterateTests(unittest.TestCase):
         self.assertTrue(monitor.amphetamine_ctl.start_session.called)
 
     def test_extends_when_close_to_expiry(self):
-        # Owned session has 2 min left (< 3 min threshold): reconcile must top
+        # Owned session has 1 min left (< 2 min threshold): reconcile must top
         # it up (call start_session) and stay "on".
-        self._enter(self._patches(statuses=["working"], remaining=120))
+        self._enter(self._patches(statuses=["working"], remaining=60))
         cfg = self._cfg()
         ctx = monitor.MonitorCtx(monitor_state="on", owned_session=True, last_transition=0.0)
         ctx = monitor.iterate(cfg, ctx, 1001.0)
@@ -401,8 +433,18 @@ class IterateTests(unittest.TestCase):
         self.assertTrue(monitor.amphetamine_ctl.start_session.called)
         monitor.amphetamine_ctl.start_session.assert_called_with(False, 2.0)
 
+    def test_extends_by_configured_minutes_without_hot_loop(self):
+        # Just under the 2 min threshold plus a 1 min top-up should request a
+        # 3 min session, so the next poll is above threshold instead of looping.
+        self._enter(self._patches(statuses=["working"], remaining=115))
+        cfg = self._cfg()
+        ctx = monitor.MonitorCtx(monitor_state="on", owned_session=True, last_transition=0.0)
+        ctx = monitor.iterate(cfg, ctx, 1001.0)
+        self.assertEqual(ctx.monitor_state, "on")
+        monitor.amphetamine_ctl.start_session.assert_called_with(False, 3.0)
+
     def test_does_not_extend_at_threshold(self):
-        self._enter(self._patches(statuses=["working"], remaining=180))
+        self._enter(self._patches(statuses=["working"], remaining=120))
         cfg = self._cfg()
         ctx = monitor.MonitorCtx(monitor_state="on", owned_session=True, last_transition=0.0)
         ctx = monitor.iterate(cfg, ctx, 1001.0)
@@ -410,7 +452,7 @@ class IterateTests(unittest.TestCase):
         self.assertFalse(monitor.amphetamine_ctl.start_session.called)
 
     def test_does_not_extend_when_plenty_remaining(self):
-        # 9 min left (> 3 min threshold): no extend call.
+        # 9 min left (> 2 min threshold): no extend call.
         self._enter(self._patches(statuses=["working"], remaining=540))
         cfg = self._cfg()
         ctx = monitor.MonitorCtx(monitor_state="on", owned_session=True, last_transition=0.0)
@@ -431,8 +473,7 @@ class IterateTests(unittest.TestCase):
 
 
 class DisarmedTests(unittest.TestCase):
-    """armed=False (paused via the TUI): the daemon stays resident but performs
-    no Amphetamine side effects, ignoring working agents entirely."""
+    """armed=False: the daemon performs no Amphetamine side effects."""
 
     def _patches(self, *, statuses=None):
         status_vals = statuses if statuses is not None else []
@@ -485,6 +526,24 @@ class DisarmedTests(unittest.TestCase):
         self.assertEqual(ctx.monitor_state, "off")
         self.assertFalse(monitor.amphetamine_ctl.end_session.called)
         self.assertFalse(monitor.amphetamine_ctl.start_session.called)
+
+
+class AutoStopTests(unittest.TestCase):
+    def test_does_not_stop_before_agent_count_observed(self):
+        with mock.patch.dict(os.environ, {
+            "HERDR_AMPHETAMINE_AUTO_UNLOAD": "1",
+            "HERDR_AMPHETAMINE_LABEL": "test.label",
+        }), mock.patch.object(monitor.launchagent, "stop") as stop:
+            self.assertFalse(monitor._auto_stop_if_empty(monitor.MonitorCtx(agent_count=-1)))
+            self.assertFalse(stop.called)
+
+    def test_stops_current_session_service_when_empty(self):
+        with mock.patch.dict(os.environ, {
+            "HERDR_AMPHETAMINE_AUTO_UNLOAD": "1",
+            "HERDR_AMPHETAMINE_LABEL": "test.label",
+        }), mock.patch.object(monitor.launchagent, "stop") as stop:
+            self.assertTrue(monitor._auto_stop_if_empty(monitor.MonitorCtx(agent_count=0)))
+            stop.assert_called_once_with("test.label")
 
     def test_armed_defaults_true_resumes_normal(self):
         # Sanity: the default Config (armed=True) is NOT short-circuited, so the
