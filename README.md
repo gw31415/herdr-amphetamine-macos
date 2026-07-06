@@ -94,8 +94,8 @@ Defaults:
 - poll every 5 seconds,
 - require 5 seconds of sustained work before starting,
 - require 30 seconds of sustained idle before leaving `on`,
-- start/top up a 10-minute Amphetamine session,
-- top up when remaining time is at or below 5 minutes.
+- start/top up a 2-minute Amphetamine session,
+- top up when remaining time is below 3 minutes.
 
 Important safety rule: the monitor never calls Amphetamine's `end session`. `armed=false`, idle agents, daemon shutdown, and uninstall all stop plugin activity without cancelling the user's manual Amphetamine session.
 
@@ -115,8 +115,8 @@ Edit it via the TUI when possible. The daemon reloads config every poll and on b
 | `poll_seconds` | `5` | seconds between observations |
 | `start_grace_seconds` | `5` | sustained work required before starting |
 | `stop_grace_seconds` | `30` | sustained idle required before leaving `on` |
-| `session_minutes` | `10` | Amphetamine session length; `0` means infinite |
-| `extend_threshold_minutes` | `5` | top up when remaining time is at/below this |
+| `session_minutes` | `2` | Amphetamine session length; `0` means infinite |
+| `extend_threshold_minutes` | `3` | top up when remaining time is below this |
 | `prevent_closed_display_sleep` | `true` | enable Amphetamine closed-display mode |
 | `display_sleep_allowed` | `false` | allow display sleep during sessions |
 | `herdr_bin_path` | `null` | `null` means env/PATH resolution |

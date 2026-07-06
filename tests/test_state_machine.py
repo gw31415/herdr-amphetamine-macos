@@ -391,17 +391,26 @@ class IterateTests(unittest.TestCase):
         self.assertTrue(monitor.amphetamine_ctl.start_session.called)
 
     def test_extends_when_close_to_expiry(self):
-        # Owned 10-min session has 2 min left (<= 5 min threshold): reconcile
-        # must extend it (call start_session) and stay "on".
+        # Owned session has 2 min left (< 3 min threshold): reconcile must top
+        # it up (call start_session) and stay "on".
         self._enter(self._patches(statuses=["working"], remaining=120))
         cfg = self._cfg()
         ctx = monitor.MonitorCtx(monitor_state="on", owned_session=True, last_transition=0.0)
         ctx = monitor.iterate(cfg, ctx, 1001.0)
         self.assertEqual(ctx.monitor_state, "on")
         self.assertTrue(monitor.amphetamine_ctl.start_session.called)
+        monitor.amphetamine_ctl.start_session.assert_called_with(False, 2.0)
+
+    def test_does_not_extend_at_threshold(self):
+        self._enter(self._patches(statuses=["working"], remaining=180))
+        cfg = self._cfg()
+        ctx = monitor.MonitorCtx(monitor_state="on", owned_session=True, last_transition=0.0)
+        ctx = monitor.iterate(cfg, ctx, 1001.0)
+        self.assertEqual(ctx.monitor_state, "on")
+        self.assertFalse(monitor.amphetamine_ctl.start_session.called)
 
     def test_does_not_extend_when_plenty_remaining(self):
-        # 9 min left on a 10-min session (> 5 min threshold): no extend call.
+        # 9 min left (> 3 min threshold): no extend call.
         self._enter(self._patches(statuses=["working"], remaining=540))
         cfg = self._cfg()
         ctx = monitor.MonitorCtx(monitor_state="on", owned_session=True, last_transition=0.0)

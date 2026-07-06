@@ -58,10 +58,10 @@ exits, like `monitor.py --status`.
 The first call triggers a macOS **Automation** permission prompt. Allow it.
 `start_session` is focus-preserving: it tries `start new session` *without*
 activating Amphetamine first, and only activates as a fallback if Amphetamine
-ignores the command (idle/app-nap). The default session length is 10 minutes;
-pass `duration_minutes=` to override. The monitor extends the session back to 10
-minutes whenever agents are working and time remaining drops to the extend
-threshold (default 5). It does not end the session when agents go idle.
+ignores the command (idle/app-nap). The default session length is 2 minutes;
+pass `duration_minutes=` to override. The monitor adds 2 minutes whenever agents
+are working and time remaining drops below the extend threshold (default 3). It
+does not end the session when agents go idle.
 
 ```sh
 # Before: note the current state

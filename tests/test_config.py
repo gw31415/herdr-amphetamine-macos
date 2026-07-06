@@ -54,6 +54,8 @@ class LoadTests(_IsolatedStateDir):
         cfg = config.load_config_file()
         self.assertTrue(cfg["armed"])
         self.assertEqual(cfg["poll_seconds"], 5.0)
+        self.assertEqual(cfg["session_minutes"], 2.0)
+        self.assertEqual(cfg["extend_threshold_minutes"], 3.0)
         self.assertEqual(cfg["amphetamine_app_path"], "/Applications/Amphetamine.app")
 
     def test_load_defaults_when_corrupt(self):

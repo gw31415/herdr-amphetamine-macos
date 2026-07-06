@@ -27,8 +27,8 @@ DEFAULT_CONFIG = {
     "poll_seconds": 5.0,
     "start_grace_seconds": 5.0,
     "stop_grace_seconds": 30.0,
-    "session_minutes": 10.0,            # 0 = infinite Amphetamine session
-    "extend_threshold_minutes": 5.0,    # extend when time remaining <= this
+    "session_minutes": 2.0,             # 0 = infinite Amphetamine session
+    "extend_threshold_minutes": 3.0,    # extend when time remaining < this
     "herdr_bin_path": None,             # None -> HERDR_BIN_PATH env -> `which herdr`
     "amphetamine_app_path": "/Applications/Amphetamine.app",
     "prevent_closed_display_sleep": True,
@@ -134,8 +134,8 @@ def validate(cfg: dict) -> dict:
     out["poll_seconds"] = max(1.0, _to_float(out.get("poll_seconds"), 5.0))
     out["start_grace_seconds"] = max(0.0, _to_float(out.get("start_grace_seconds"), 5.0))
     out["stop_grace_seconds"] = max(0.0, _to_float(out.get("stop_grace_seconds"), 30.0))
-    out["session_minutes"] = max(0.0, _to_float(out.get("session_minutes"), 10.0))
-    out["extend_threshold_minutes"] = max(0.0, _to_float(out.get("extend_threshold_minutes"), 5.0))
+    out["session_minutes"] = max(0.0, _to_float(out.get("session_minutes"), 2.0))
+    out["extend_threshold_minutes"] = max(0.0, _to_float(out.get("extend_threshold_minutes"), 3.0))
     bin_path = out.get("herdr_bin_path")
     if bin_path is None:
         out["herdr_bin_path"] = None

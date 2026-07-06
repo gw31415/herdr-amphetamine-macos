@@ -50,8 +50,8 @@ STATES = ("off", "pending_on", "on", "pending_off", "error")
 DEFAULT_POLL_SECONDS = 5.0
 DEFAULT_START_GRACE_SECONDS = 5.0
 DEFAULT_STOP_GRACE_SECONDS = 30.0
-DEFAULT_SESSION_MINUTES = 10.0  # Amphetamine session length; 0 = infinite
-DEFAULT_EXTEND_THRESHOLD_MINUTES = 5.0  # extend when time remaining is at/below this
+DEFAULT_SESSION_MINUTES = 2.0  # Amphetamine session length; 0 = infinite
+DEFAULT_EXTEND_THRESHOLD_MINUTES = 3.0  # extend when time remaining is below this
 
 
 class HerdrError(RuntimeError):
@@ -457,12 +457,12 @@ def iterate(cfg: Config, ctx: MonitorCtx, now: float) -> MonitorCtx:
                 last_error = "session start failure"
         elif remaining == 0:
             pass  # infinite session; nothing to extend
-        elif 0 < remaining <= cfg.extend_threshold_minutes * 60:
-            # Finite session is close to expiry -> extend it back to the full
-            # session length. This applies to manual sessions too; we only add
+        elif 0 < remaining < cfg.extend_threshold_minutes * 60:
+            # Finite session is close to expiry -> top it up by starting a new
+            # short session. This applies to manual sessions too; we only add
             # time while agents are working and never end the session ourselves.
-            log(f"Session has {remaining}s left (<= {int(cfg.extend_threshold_minutes)}m); "
-                f"extending to {int(cfg.session_minutes)}m.")
+            log(f"Session has {remaining}s left (< {int(cfg.extend_threshold_minutes)}m); "
+                f"adding {int(cfg.session_minutes)}m.")
             try:
                 _start()
                 prevent_fn()
