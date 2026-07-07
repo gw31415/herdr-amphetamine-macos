@@ -26,7 +26,6 @@ Expect: all tests pass, including `test_sustained_working_starts_session`,
 
 ```sh
 python3 scripts/tui.py
-#   or:  herdr plugin action invoke tui --plugin amphetamine-macos
 #   or:  herdr plugin pane open --plugin amphetamine-macos --entrypoint tui
 ```
 

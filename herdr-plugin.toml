@@ -7,12 +7,7 @@ platforms = ["macos"]
 
 # The monitor runs as a session-scoped LaunchAgent (sync with the
 # `sync-launchagent` action). All control — enable/pause (arm/disarm),
-# settings, and status — happens in the interactive TUI (`tui` action / pane).
-[[actions]]
-id = "tui"
-title = "Open Amphetamine Sleep Guard (TUI)"
-contexts = ["workspace"]
-command = ["python3", "scripts/tui.py"]
+# settings, and status — happens in the interactive TUI pane.
 
 [[actions]]
 id = "status"

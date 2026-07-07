@@ -364,7 +364,6 @@ Keep the verified modules (`amphetamine_ctl.py`, the state-machine core of `moni
      effort) so the change applies immediately instead of waiting one poll.
 
 5. **Update `herdr-plugin.toml`.** Replace the old action set with:
-   - `tui` — open the interactive TUI (primary; opens a herdr pane).
    - `install-launchagent` / `uninstall-launchagent` — first-time setup / removal.
    - `status` — non-interactive one-shot print (kept for scripting).
    - Declare the `tui` entrypoint as a pane so `herdr plugin pane open` works.
@@ -469,12 +468,6 @@ description = "Resident LaunchAgent keeps macOS awake with Amphetamine while her
 platforms = ["macos"]
 
 [[actions]]
-id = "tui"
-title = "Open Amphetamine Sleep Guard (TUI)"
-contexts = ["workspace"]
-command = ["python3", "scripts/tui.py"]
-
-[[actions]]
 id = "status"
 title = "Print Amphetamine monitor status"
 contexts = ["workspace"]
@@ -515,7 +508,7 @@ End-to-end manual validation:
 ```sh
 python3 scripts/install_launchagent.py
 launchctl print gui/$UID/com.herdr.amphetamine.monitor
-python3 scripts/tui.py            # or: herdr plugin action invoke tui
+python3 scripts/tui.py            # or: herdr plugin pane open --plugin amphetamine-macos --entrypoint tui
 # Inside the TUI: press Space to disarm, observe the session end; Space again to arm.
 # Edit a setting (e.g. stop grace), quit, confirm it persisted in config.json.
 tail -n 50 ~/Library/Logs/herdr-amphetamine/monitor.out.log
@@ -592,7 +585,6 @@ Relevant manual commands:
 
     herdr agent list
     herdr plugin link <abs-path-to-plugin>
-    herdr plugin action invoke tui --plugin local.amphetamine-macos
     herdr plugin pane open --plugin local.amphetamine-macos --entrypoint tui
     launchctl print gui/$UID/com.herdr.amphetamine.monitor
     pmset -g assertions

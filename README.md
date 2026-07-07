@@ -53,8 +53,6 @@ The first real Amphetamine command may trigger a macOS Automation permission pro
 Open the TUI:
 
 ```sh
-herdr plugin action invoke tui --plugin amphetamine-macos
-# or
 herdr plugin pane open --plugin amphetamine-macos --entrypoint tui
 # or
 python3 scripts/tui.py
@@ -161,7 +159,7 @@ The uninstall action unloads/removes only the current session's LaunchAgent. It 
 - Automation denied: grant permission in System Settings -> Privacy & Security -> Automation.
 - Lid-closed sleep still happens: complete Amphetamine's one-time closed-display prompt/setup; see `docs/manual-test.md`.
 - Daemon not running: run `sync-launchagent`, or use `i` in the TUI for the current session.
-- TUI says daemon not detected with agents present: run the sync action.
+- TUI pane says daemon not detected with agents present: run the sync action.
 
 ## Development
 
