@@ -112,7 +112,7 @@ _COLORS_READY = False
 def _attr(name: str) -> int:
     if not _COLORS_READY or curses is None:
         return 0
-    pairs = {"green": 1, "yellow": 2, "red": 3, "cyan": 4}
+    pairs = {"green": 1, "yellow": 2, "red": 3, "cyan": 4, "blue": 5}
     if name == "dim":
         return curses.A_DIM
     cp = pairs.get(name, 0)
@@ -276,43 +276,60 @@ def _state_badge(state, armed):
     return "ARMED  [ OFF ]", _attr("dim")
 
 
-def _row(stdscr, y, label, value, vattr=0):
-    w = stdscr.getmaxyx()[1]
-    text = f"  {label:<20}{value}"
-    stdscr.addnstr(y, 0, text.ljust(w)[:w], w, vattr)
+def _put(stdscr, y, x, text, maxw, attr=0):
+    if maxw <= 0:
+        return
+    try:
+        stdscr.addnstr(y, x, str(text)[:maxw], maxw, attr)
+    except curses.error:
+        pass
 
 
-def _clickable_row(stdscr, y, tag, label, value, vattr=0):
+def _box(stdscr, y, x, h, w, title="", attr=0):
+    if h < 3 or w < 8:
+        return
+    try:
+        win = stdscr.derwin(h, w, y, x)
+        win.attron(attr)
+        win.border()
+        win.attroff(attr)
+        if title:
+            win.addnstr(0, 2, f" {title} ", max(0, w - 4), attr | (curses.A_BOLD if curses else 0))
+    except curses.error:
+        return
+
+
+def _row(stdscr, y, x, w, label, value, vattr=0):
+    text = f"{label:<18} {value}"
+    _put(stdscr, y, x, text.ljust(w), w, vattr)
+
+
+def _clickable_row(stdscr, y, x, w, tag, label, value, vattr=0):
     """Like _row but registers a ClickRegion for mouse clicks.
 
     The [tag] portion (e.g. "[Space]") is rendered bold so users see it as a
     clickable button; clicking anywhere on that row triggers the action.
     """
-    w = stdscr.getmaxyx()[1]
-    full = f"  {tag}  {label:<16}{value}"
-    stdscr.addnstr(y, 0, full.ljust(w)[:w], w, vattr)
+    full = f"{tag:<8} {label:<18} {value}"
+    _put(stdscr, y, x, full.ljust(w), w, vattr)
     # Overlay the tag as bold (if it fits)
     bold = curses.A_BOLD if curses is not None else 0
-    tag_text = f"  {tag}"
-    stdscr.addnstr(y, 0, tag_text, len(tag_text), bold | vattr)
-    _LAYOUT.rows.append(ClickRegion(y=y, action=_TAG_TO_KEY.get(tag, ""),
-                                     label=tag))
+    _put(stdscr, y, x, tag, min(len(tag), w), bold | _attr("cyan") | vattr)
+    _LAYOUT.rows.append(ClickRegion(
+        y=y, action=_TAG_TO_KEY.get(tag, ""), x_start=x, x_end=x + w - 1, label=tag))
 
 
 def _render_action_bar(stdscr, h, w, footer_msg):
-    """Bottom action bar with clickable segments like herdr.
-
-    Segments: [Space]ARMED  [i]INSTALL  [u]UNINSTALL  [r]REFRESH  [?]HELP  [q]QUIT
-    """
+    """Bottom action bar with clickable segments like herdr."""
     _LAYOUT.action_segs = []
     reverse = curses.A_REVERSE if curses is not None else 0
     segments = [
-        (" [Space] ARM/PAUSE ", " "),
-        (" [i] INSTALL ", "i"),
-        (" [u] UNINSTALL ", "u"),
-        (" [r] REFRESH ", "r"),
-        (" [?] HELP ", "?"),
-        (" [q] QUIT ", "q"),
+        (" [Space] Arm/Pause ", " "),
+        (" [i] Install ", "i"),
+        (" [u] Uninstall ", "u"),
+        (" [r] Refresh ", "r"),
+        (" [?] Help ", "?"),
+        (" [q] Quit ", "q"),
     ]
     # The bar lives on the bottom line (y = h-1); never paint the lower-right
     # cell, or addnstr raises curses.error and the whole bar fails to render.
@@ -348,17 +365,6 @@ def render(stdscr, d, footer_msg):
 
     bold = curses.A_BOLD if curses is not None else 0
 
-    badge_text, badge_attr = _state_badge(mstate, cfg.armed)
-    bar = "=" * w
-    dash = "-" * w
-    y = 0
-    stdscr.addnstr(y, 0, bar, w); y += 1
-    stdscr.addnstr(y, 0, " Amphetamine Sleep Guard", w)
-    stdscr.addnstr(y, max(0, w - len(badge_text) - 2), badge_text,
-                   len(badge_text), badge_attr | bold)
-    y += 1
-    stdscr.addnstr(y, 0, bar, w); y += 1
-
     avail = "present" if d["available"] else "MISSING"
     if d["active"] is None:
         sa = "unknown"
@@ -369,22 +375,45 @@ def render(stdscr, d, footer_msg):
     sess = (f"add {cfg.top_up_minutes:g}m below {cfg.top_up_threshold_minutes:g}m"
             if cfg.top_up_minutes else "infinite")
     daemon = "running" if d["daemon"] else "not detected"
+    badge_text, badge_attr = _state_badge(mstate, cfg.armed)
 
-    _row(stdscr, y, "Monitor state:", mstate); y += 1
-    _row(stdscr, y, "Daemon:", daemon,
-         _attr("green") if d["daemon"] else _attr("dim")); y += 1
+    if h < 18 or w < 70:
+        _put(stdscr, 0, 0, "Amphetamine Sleep Guard", max(1, w - 1), bold)
+        _put(stdscr, 1, 0, badge_text, max(1, w - 1), badge_attr | bold)
+        _put(stdscr, 2, 0, "terminal too small", max(1, w - 1), _attr("yellow"))
+        _render_action_bar(stdscr, h, w, footer_msg)
+        stdscr.refresh()
+        return
+
+    last_col = max(1, w - 1)
+    _put(stdscr, 0, 2, "Amphetamine Sleep Guard", last_col - 2, bold)
+    _put(stdscr, 0, max(2, w - len(badge_text) - 2), badge_text,
+         len(badge_text), badge_attr | bold)
+    _put(stdscr, 1, 2, f"updated {d['ts']}", last_col - 2, _attr("dim"))
+
+    content_top = 3
+    content_bottom = h - 3
+    left_w = max(40, min(58, w // 2))
+    right_x = left_w + 1
+    right_w = w - right_x
+    status_h = 10
+    settings_h = max(3, content_bottom - content_top - status_h)
+
+    _box(stdscr, content_top, 0, status_h, left_w, "Status", _attr("blue"))
+    y = content_top + 2
+    x = 2
+    inner_w = left_w - 4
     agents = f"{d['working']} / {d['total']}" + ("" if d["herdr_ok"] else "  [herdr unreachable]")
-    _row(stdscr, y, "Working agents:", agents); y += 1
-    _row(stdscr, y, "Session active:", f"{sa}    length {sess}"); y += 1
-    _row(stdscr, y, "Amphetamine app:", avail); y += 1
-    _row(stdscr, y, "Last error:", str(state.get("last_error") or "-")); y += 1
-    _row(stdscr, y, "Updated:", d["ts"]); y += 1
+    _row(stdscr, y, x, inner_w, "Monitor state", mstate); y += 1
+    _row(stdscr, y, x, inner_w, "Daemon", daemon, _attr("green") if d["daemon"] else _attr("dim")); y += 1
+    _row(stdscr, y, x, inner_w, "Working agents", agents); y += 1
+    _row(stdscr, y, x, inner_w, "Session active", f"{sa}  length {sess}"); y += 1
+    _row(stdscr, y, x, inner_w, "Amphetamine app", avail, 0 if d["available"] else _attr("red")); y += 1
+    _row(stdscr, y, x, inner_w, "Last error", str(state.get("last_error") or "-"), _attr("red") if state.get("last_error") else _attr("dim"))
 
-    if y < h:
-        stdscr.addnstr(y, 0, dash, w); y += 1
-    if y < h:
-        stdscr.addnstr(y, 0, " Settings    (click a row or press a key to edit)",
-                       w, bold); y += 1
+    _box(stdscr, content_top + status_h, 0, settings_h, left_w,
+         "Settings  click row or press key", _attr("blue"))
+    y = content_top + status_h + 2
 
     cd = d["cfg_dict"]
 
@@ -405,28 +434,27 @@ def render(stdscr, d, footer_msg):
         ("[a]", "Amphetamine:", str(cd.get("amphetamine_app_path")), 0),
     ]
     for tag, label, value, attr in settings_rows:
-        if y >= h - 2:
+        if y >= content_bottom:
             break
-        _clickable_row(stdscr, y, tag, label, value, attr)
+        _clickable_row(stdscr, y, 2, inner_w, tag, label, value, attr)
         y += 1
 
-    if y < h:
-        stdscr.addnstr(y, 0, dash, w); y += 1
-    if y < h:
-        stdscr.addnstr(y, 0, f" Recent  ({d['log_path']})", w, bold); y += 1
+    _box(stdscr, content_top, right_x, max(3, content_bottom - content_top),
+         right_w, "Recent log", _attr("blue"))
+    y = content_top + 2
+    log_w = right_w - 4
+    _put(stdscr, y, right_x + 2, str(d["log_path"]), log_w, _attr("dim"))
+    y += 1
     if d["tail"]:
         for line in d["tail"]:
-            if y >= h - 2:
+            if y >= content_bottom:
                 break
-            _row(stdscr, y, "", line, _attr("dim") if _COLORS_READY else 0)
+            _put(stdscr, y, right_x + 2, line, log_w, _attr("dim") if _COLORS_READY else 0)
             y += 1
-    elif y < h:
+    elif y < content_bottom:
         dim = curses.A_DIM if curses is not None else 0
-        stdscr.addnstr(y, 0, "  (no log yet — install the LaunchAgent to start the daemon)",
-                       w, dim); y += 1
-
-    if y < h:
-        stdscr.addnstr(y, 0, bar, w); y += 1
+        _put(stdscr, y, right_x + 2, "(no log yet - install the LaunchAgent to start the daemon)",
+             log_w, dim)
 
     # Clickable action bar (bottom line)
     _render_action_bar(stdscr, h, w, footer_msg)
@@ -619,6 +647,7 @@ def _run(stdscr):
         curses.init_pair(2, curses.COLOR_YELLOW, -1)
         curses.init_pair(3, curses.COLOR_RED, -1)
         curses.init_pair(4, curses.COLOR_CYAN, -1)
+        curses.init_pair(5, curses.COLOR_BLUE, -1)
         _COLORS_READY = True
     except Exception:  # noqa: BLE001 - colors are cosmetic
         _COLORS_READY = False
