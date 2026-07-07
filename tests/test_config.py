@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for config.py: load/save/validate and env-over-file precedence.
 
-No real Amphetamine or herdr calls. HERDR_AMPHETAMINE_STATE_DIR is redirected to
+No real Amphetamine or herdr calls. HERDR_AMPHETAMINE_CONFIG_DIR is redirected to
 a fresh tempdir per test so config.json is isolated."""
 
 import json
@@ -18,19 +18,20 @@ import config  # noqa: E402
 
 class _IsolatedStateDir(unittest.TestCase):
     def setUp(self):
-        self._prev = os.environ.get("HERDR_AMPHETAMINE_STATE_DIR")
+        self._prev_cfg = os.environ.get("HERDR_AMPHETAMINE_CONFIG_DIR")
+        self._prev_state = os.environ.get("HERDR_AMPHETAMINE_STATE_DIR")
         self._tmp = tempfile.TemporaryDirectory()
+        os.environ["HERDR_AMPHETAMINE_CONFIG_DIR"] = self._tmp.name
         os.environ["HERDR_AMPHETAMINE_STATE_DIR"] = self._tmp.name
 
     def tearDown(self):
         for k in list(os.environ):
             if k.startswith("HERDR_AMPHETAMINE_") or k in ("AMPHETAMINE_APP_PATH", "HERDR_BIN_PATH"):
-                if k != "HERDR_AMPHETAMINE_STATE_DIR":
-                    os.environ.pop(k, None)
-        if self._prev is None:
-            os.environ.pop("HERDR_AMPHETAMINE_STATE_DIR", None)
-        else:
-            os.environ["HERDR_AMPHETAMINE_STATE_DIR"] = self._prev
+                os.environ.pop(k, None)
+        for key, prev in (("HERDR_AMPHETAMINE_CONFIG_DIR", self._prev_cfg),
+                          ("HERDR_AMPHETAMINE_STATE_DIR", self._prev_state)):
+            if prev is not None:
+                os.environ[key] = prev
         self._tmp.cleanup()
 
 

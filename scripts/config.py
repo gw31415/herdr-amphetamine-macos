@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """Persistent, TUI-editable configuration for the Amphetamine sleep guard.
 
-Settings live in ``config.json`` under the state directory (see :func:`state_dir`).
-The session LaunchAgent daemon re-reads this file every poll cycle, so changes
-made in the TUI take effect within one cycle **without reinstalling the
-LaunchAgent**.
+Settings live in ``config.json`` under the config directory (see
+:func:`config_dir`); runtime state lives in ``state.json`` under
+:func:`state_dir`. Both resolve to per-session subdirectories of the
+herdr-provided plugin dirs ``HERDR_PLUGIN_CONFIG_DIR`` / ``HERDR_PLUGIN_STATE_DIR``
+(the LaunchAgent pins the resolved absolute paths as ``HERDR_AMPHETAMINE_CONFIG_DIR``
+/ ``HERDR_AMPHETAMINE_STATE_DIR``). The daemon re-reads ``config.json`` every poll
+cycle, so changes made in the TUI take effect within one cycle **without
+reinstalling the LaunchAgent**.
 
 Load precedence when the daemon builds its runtime config is::
 
     environment variable (if set) > config.json > built-in default
 
-The LaunchAgent pins ``HERDR_BIN_PATH`` and ``HERDR_AMPHETAMINE_STATE_DIR`` as
+The LaunchAgent pins ``HERDR_BIN_PATH`` and the resolved config/state dirs as
 bootstrap environment; every other tunable lives here and is editable from the
 TUI. This module is stdlib-only and never imports the daemon, so the TUI can use
 it without pulling in ``monitor``'s subprocess/Amphetamine side effects.
@@ -45,20 +49,39 @@ _ENV_FLOAT = {
 }
 
 
-def state_dir() -> Path:
-    """Where ``config.json`` and ``state.json`` live.
+def _legacy_dir() -> Path:
+    """Pre-herdr-env fallback for standalone (non-plugin) runs."""
+    return Path.home() / "Library" / "Application Support" / "herdr-amphetamine"
 
-    ``HERDR_AMPHETAMINE_STATE_DIR`` env wins (the LaunchAgent pins this);
-    otherwise ``~/Library/Application Support/herdr-amphetamine``.
+
+def config_dir() -> Path:
+    """Where ``config.json`` (user-editable settings) lives.
+
+    ``HERDR_AMPHETAMINE_CONFIG_DIR`` wins — the LaunchAgent pins this to an
+    absolute, session-scoped path under herdr's ``HERDR_PLUGIN_CONFIG_DIR``.
+    Without it (standalone/dev runs outside a plugin action), fall back to the
+    legacy Application Support directory.
+    """
+    override = os.environ.get("HERDR_AMPHETAMINE_CONFIG_DIR")
+    if override:
+        return Path(override)
+    return _legacy_dir()
+
+
+def state_dir() -> Path:
+    """Where ``state.json`` (runtime monitor state) lives.
+
+    ``HERDR_AMPHETAMINE_STATE_DIR`` wins (the LaunchAgent pins this); otherwise
+    the legacy Application Support directory.
     """
     override = os.environ.get("HERDR_AMPHETAMINE_STATE_DIR")
     if override:
         return Path(override)
-    return Path.home() / "Library" / "Application Support" / "herdr-amphetamine"
+    return _legacy_dir()
 
 
 def config_path() -> Path:
-    return state_dir() / "config.json"
+    return config_dir() / "config.json"
 
 
 def default_config() -> dict:

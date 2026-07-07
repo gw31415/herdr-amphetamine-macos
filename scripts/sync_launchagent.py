@@ -16,6 +16,7 @@ import monitor  # noqa: E402
 
 def main() -> int:
     p = launchagent.paths()
+    os.environ["HERDR_AMPHETAMINE_CONFIG_DIR"] = str(p["config_dir"])
     os.environ["HERDR_AMPHETAMINE_STATE_DIR"] = str(p["state_dir"])
     cfg = monitor.load_config()
     try:

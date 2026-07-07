@@ -41,12 +41,13 @@ screen (the TUI).
                                          │ polls every cycle reads/writes
                                          ▼
             ┌──────────────────────────────────────────────────────┐
-            │  State dir: ~/Library/Application Support/herdr-amphetamine/ │
-            │                                                      │
-            │   config.json  ◄── intent/settings (TUI-editable)    │
+            │  HERDR_PLUGIN_CONFIG_DIR/<slug>/config.json (settings)│
             │      armed, poll, grace, session, paths, closed-display     │
-            │   state.json   ◄── runtime (monitor_state, owned_session,   │
-            │      last_error, last_transition)  [written by daemon]      │
+            │  HERDR_PLUGIN_STATE_DIR/<slug>/state.json (runtime)   │
+            │      monitor_state, owned_session, last_error, ...    │
+            │  (resolved per session; the LaunchAgent pins the      │
+            │   absolute paths as HERDR_AMPHETAMINE_CONFIG_DIR /    │
+            │   HERDR_AMPHETAMINE_STATE_DIR)                        │
             └──────────────────────────────────────────────────────┘
                   ▲                                  ▲
                   │ atomic write                     │ read
@@ -105,9 +106,12 @@ screen (the TUI).
   `PreventUserIdleSystemSleep`/`PreventUserIdleDisplaySleep`; `end_session` clears
   them. `enable closed display mode` returns `true` (the inverted-verb correction
   is verified).
-- [x] herdr 0.7.x injects `HERDR_BIN_PATH` (and `HERDR_PLUGIN_ID`, context vars)
-  but **not** `HERDR_PLUGIN_STATE_DIR`/`HERDR_PLUGIN_ROOT`. State path resolves as
-  `HERDR_AMPHETAMINE_STATE_DIR` env → `~/Library/Application Support/herdr-amphetamine/`.
+- [x] herdr 0.7.x injects `HERDR_BIN_PATH`, `HERDR_PLUGIN_ID`, context vars, and
+  the per-plugin data roots `HERDR_PLUGIN_CONFIG_DIR` / `HERDR_PLUGIN_STATE_DIR`
+  (verified against the 0.7.1-preview binary and the plugin docs). Settings now
+  live under `HERDR_PLUGIN_CONFIG_DIR/<slug>/` and runtime state under
+  `HERDR_PLUGIN_STATE_DIR/<slug>/`; the LaunchAgent pins the resolved absolute
+  paths as `HERDR_AMPHETAMINE_CONFIG_DIR` / `HERDR_AMPHETAMINE_STATE_DIR`.
 - [x] Battery-power caveat documented: Amphetamine refuses `start new session` on
   battery unless its "Allow sessions while on battery power" preference is on. The
   daemon reconciles the on-state every poll so a silently-ignored start does not
@@ -161,8 +165,8 @@ screen (the TUI).
 - Observation: `herdr agent list` prints JSON by default on herdr 0.7.1-preview (no `--json` flag; passing it errors). The envelope is `{"id":"cli:agent:list","result":{"agents":[{"agent_status":...}], "type":"agent_list"}}`. The status field is `agent_status` (not `status`).
   Evidence: `herdr agent list` on the target machine returned 7 agents including `working`, `idle`, and `done`.
 
-- Observation: herdr 0.7.x does **not** inject `HERDR_PLUGIN_ROOT`, `HERDR_PLUGIN_CONFIG_DIR`, or `HERDR_PLUGIN_STATE_DIR`. Because the daemon also runs as a LaunchAgent (outside any plugin action), it cannot rely on herdr-injected state paths. State resolves as `HERDR_AMPHETAMINE_STATE_DIR` → `~/Library/Application Support/herdr-amphetamine/`. The LaunchAgent pins the former.
-  Evidence: `strings` on `/Users/ama/.local/bin/herdr` and `herdr plugin action invoke --help`.
+- Observation (rechecked 2026-07-07): herdr 0.7.1-preview **does** inject `HERDR_PLUGIN_ROOT`, `HERDR_PLUGIN_CONFIG_DIR`, and `HERDR_PLUGIN_STATE_DIR` for plugin actions (confirmed via `strings` on the binary and the plugin docs at herdr.dev/docs/plugins). The daemon still runs as a LaunchAgent outside any plugin action, so it cannot rely on the herdr-injected paths directly; instead the installer resolves per-session subdirectories under those roots and the LaunchAgent pins the absolute results as `HERDR_AMPHETAMINE_CONFIG_DIR` / `HERDR_AMPHETAMINE_STATE_DIR`. (An earlier draft, dated 2026-07-05, incorrectly concluded these vars were not injected.)
+  Evidence: `strings /Users/ama/.local/bin/herdr | grep HERDR_PLUGIN_`, `herdr plugin config-dir amphetamine-macos`.
 
 - Observation: a user LaunchAgent runs with a minimal PATH that does not include `~/.local/bin`, so the installer resolves herdr to an absolute path and bakes it into the plist as `HERDR_BIN_PATH`. This stays true in the redesign; the plist still pins `HERDR_BIN_PATH` even though tunables move to `config.json`.
   Evidence: first install logged repeated "herdr unavailable"; after the fix the daemon logged `Transition: off -> pending_on`.
@@ -203,9 +207,13 @@ screen (the TUI).
   Rationale: "closed-display mode" is the keep-awake-while-closed feature; the sdef defines `enable` as "allow". An earlier draft inverted this.
   Date/Author: 2026-07-05 / implementer
 
-- Decision: Resolve state under `HERDR_AMPHETAMINE_STATE_DIR` → `~/Library/Application Support/herdr-amphetamine/`, not `HERDR_PLUGIN_STATE_DIR`.
+- Decision (superseded 2026-07-07): Resolve state under `HERDR_AMPHETAMINE_STATE_DIR` → `~/Library/Application Support/herdr-amphetamine/`, not `HERDR_PLUGIN_STATE_DIR`.
   Rationale: herdr 0.7.x does not inject plugin state paths, and the daemon runs both as a plugin action and as a standalone LaunchAgent.
   Date/Author: 2026-07-05 / implementer
+
+- Decision: Settings live under herdr's `HERDR_PLUGIN_CONFIG_DIR/<slug>/`, runtime state under `HERDR_PLUGIN_STATE_DIR/<slug>/`.
+  Rationale: herdr 0.7.1-preview injects these per-plugin roots (verified); the plugin docs direct user-editable config to `HERDR_PLUGIN_CONFIG_DIR` and runtime state to `HERDR_PLUGIN_STATE_DIR`. The `<slug>` keeps concurrent herdr sessions isolated. The LaunchAgent (which runs outside a plugin action) gets the resolved absolute paths pinned as `HERDR_AMPHETAMINE_CONFIG_DIR` / `HERDR_AMPHETAMINE_STATE_DIR`, so the daemon needs no herdr env at runtime. Supersedes the 2026-07-05 decision above.
+  Date/Author: 2026-07-07 / implementer
 
 - Decision: Default to short top-ups: add 1 minute when remaining time is below 2 minutes.
   Rationale: A short session that is repeatedly topped up keeps the Mac awake continuously while agents work, but naturally expires quickly if the monitor ever stops extending (crash, uninstall, bug). `HERDR_AMPHETAMINE_TOP_UP_MINUTES=0` restores infinite.
@@ -224,7 +232,7 @@ screen (the TUI).
   Date/Author: 2026-07-05 / implementer
 
 - **Decision (2026-07-05, redesign): Persistent settings live in `config.json`, not plist `EnvironmentVariables`.**
-  Rationale: The TUI must change settings without reinstalling the LaunchAgent. The plist keeps only bootstrap environment (`HERDR_BIN_PATH` absolute, `HERDR_AMPHETAMINE_STATE_DIR`, interpreter, log/state paths). Tunables (poll, grace, top-up amount, top-up threshold, closed-display, app paths, `armed`) live in `config.json` and are re-read every poll. Env vars override the file when set, preserving power-user escape hatches.
+  Rationale: The TUI must change settings without reinstalling the LaunchAgent. The plist keeps only bootstrap environment (`HERDR_BIN_PATH` absolute, `HERDR_AMPHETAMINE_CONFIG_DIR` / `HERDR_AMPHETAMINE_STATE_DIR` resolved under herdr's plugin dirs, interpreter, log paths). Tunables (poll, grace, top-up amount, top-up threshold, closed-display, app paths, `armed`) live in `config.json` and are re-read every poll. Env vars override the file when set, preserving power-user escape hatches.
   Date/Author: 2026-07-05 / implementer
 
 - **Decision (2026-07-05, redesign): The TUI is interactive curses (stdlib) and never owns the Amphetamine session.**
@@ -440,8 +448,10 @@ Update `launchagents/com.herdr.amphetamine.monitor.plist.template`:
 <dict>
   <key>HERDR_BIN_PATH</key>
   <string>__HERDR_BIN__</string>
+  <key>HERDR_AMPHETAMINE_CONFIG_DIR</key>
+  <string>__CONFIG_DIR__</string>
   <key>HERDR_AMPHETAMINE_STATE_DIR</key>
-  <string>__HOME__/Library/Application Support/herdr-amphetamine</string>
+  <string>__STATE_DIR__</string>
 </dict>
 ```
 

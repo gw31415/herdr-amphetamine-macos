@@ -84,13 +84,29 @@ def stop(label_name: Optional[str] = None) -> None:
     run(["launchctl", "kill", "TERM", target])
 
 
+def _session_subdir(env_var: str, home: Path, slug: str) -> Path:
+    """A per-session data subdir under a herdr-provided plugin directory.
+
+    herdr injects ``HERDR_PLUGIN_CONFIG_DIR`` / ``HERDR_PLUGIN_STATE_DIR`` for
+    plugin actions; those are plugin-scoped *roots*, so we append the session
+    slug to keep concurrent herdr sessions isolated. When the herdr env is absent
+    (standalone/dev runs, or the LaunchAgent which gets pinned absolute paths
+    instead), fall back to the legacy ``~/Library/Application Support`` root.
+    """
+    root = os.environ.get(env_var)
+    if root:
+        return Path(root) / slug
+    return home / "Library" / "Application Support" / "herdr-amphetamine" / slug
+
+
 def paths(home_dir: Optional[Path] = None) -> dict:
     home = home_dir or Path.home()
     slug = session_slug()
     label_name = f"{BASE_LABEL}.{slug}"
     return {
         "label": label_name,
-        "state_dir": home / "Library" / "Application Support" / "herdr-amphetamine" / slug,
+        "config_dir": _session_subdir("HERDR_PLUGIN_CONFIG_DIR", home, slug),
+        "state_dir": _session_subdir("HERDR_PLUGIN_STATE_DIR", home, slug),
         "log_dir": home / "Library" / "Logs" / "herdr-amphetamine" / slug,
         "plist": home / "Library" / "LaunchAgents" / f"{label_name}.plist",
     }

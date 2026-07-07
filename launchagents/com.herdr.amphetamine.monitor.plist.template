@@ -24,11 +24,14 @@
     <dict>
         <!-- Bootstrap only: tunables live in config.json (TUI-editable) and are
              re-read by the daemon every poll. The plist pins the absolute herdr
-             path (a user LaunchAgent has a minimal PATH) and the state dir. -->
+             path (a user LaunchAgent has a minimal PATH) and the resolved
+             per-session config/state dirs (under herdr's plugin dirs). -->
         <key>HERDR_BIN_PATH</key>
         <string>__HERDR_BIN__</string>
         <key>HERDR_SOCKET_PATH</key>
         <string>__HERDR_SOCKET__</string>
+        <key>HERDR_AMPHETAMINE_CONFIG_DIR</key>
+        <string>__CONFIG_DIR__</string>
         <key>HERDR_AMPHETAMINE_STATE_DIR</key>
         <string>__STATE_DIR__</string>
         <key>HERDR_AMPHETAMINE_PLIST_PATH</key>

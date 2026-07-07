@@ -40,7 +40,8 @@ herdr plugin action invoke sync-launchagent --plugin amphetamine-macos
 The installer:
 
 - resolves the `herdr` binary path for the LaunchAgent environment,
-- seeds `~/Library/Application Support/herdr-amphetamine/<session>/config.json`,
+- seeds `<HERDR_PLUGIN_CONFIG_DIR>/<session>/config.json` (herdr's per-plugin
+  config dir, e.g. `~/.config/herdr/plugins/config/amphetamine-macos/<session>/`),
 - writes `~/Library/LaunchAgents/com.herdr.amphetamine.monitor.<session>.plist`,
 - starts this session's monitor when agents exist,
 - writes logs under `~/Library/Logs/herdr-amphetamine/<session>/`.
@@ -113,13 +114,19 @@ Important safety rule: the monitor never calls Amphetamine's `end session`. `arm
 
 ## Configuration
 
-Persistent config lives at:
+Persistent settings and runtime state live in herdr's per-plugin directories,
+under per-session subdirectories so concurrent herdr sessions stay isolated:
 
 ```text
-~/Library/Application Support/herdr-amphetamine/<session>/config.json
+$HERDR_PLUGIN_CONFIG_DIR/<session>/config.json   # settings (TUI-editable)
+$HERDR_PLUGIN_STATE_DIR/<session>/state.json     # runtime monitor state
 ```
 
-Edit it via the TUI when possible. The daemon reloads config every poll and on best-effort `SIGHUP` from the TUI.
+herdr injects `HERDR_PLUGIN_CONFIG_DIR` / `HERDR_PLUGIN_STATE_DIR` for plugin
+actions; discover the config dir with `herdr plugin config-dir amphetamine-macos`
+(typically `~/.config/herdr/plugins/config/amphetamine-macos`). Edit config via
+the TUI when possible. The daemon reloads config every poll and on best-effort
+`SIGHUP` from the TUI.
 
 | Key | Default | Environment override | Meaning |
 | --- | --- | --- | --- |
@@ -134,8 +141,11 @@ Edit it via the TUI when possible. The daemon reloads config every poll and on b
 | `herdr_bin_path` | `null` | `HERDR_BIN_PATH` | `null` means env/PATH resolution |
 | `amphetamine_app_path` | `/Applications/Amphetamine.app` | `AMPHETAMINE_APP_PATH` | Amphetamine app bundle path |
 
-`HERDR_AMPHETAMINE_STATE_DIR` selects the config/state directory and is pinned
-by the LaunchAgent for the current herdr session.
+`HERDR_AMPHETAMINE_CONFIG_DIR` / `HERDR_AMPHETAMINE_STATE_DIR` select the
+per-session config/state directories. herdr injects the plugin-scoped roots
+(`HERDR_PLUGIN_CONFIG_DIR` / `HERDR_PLUGIN_STATE_DIR`); the installer resolves
+the per-session subdirectory and the LaunchAgent pins the resulting absolute
+paths.
 
 ## Uninstall
 

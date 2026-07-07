@@ -55,6 +55,7 @@ def render(home_dir: Path, p: dict) -> str:
         .replace("__PYTHON__", python)
         .replace("__PLUGIN_ROOT__", str(plugin_root()))
         .replace("__HOME__", str(home_dir))
+        .replace("__CONFIG_DIR__", str(p["config_dir"]))
         .replace("__STATE_DIR__", str(p["state_dir"]))
         .replace("__LOG_DIR__", str(p["log_dir"]))
         .replace("__PLIST__", str(p["plist"]))
@@ -68,12 +69,17 @@ def main() -> int:
     p = launchagent.paths(home_dir)
     launch_dir = home_dir / "Library" / "LaunchAgents"
     log_dir = p["log_dir"]
+    config_dir = p["config_dir"]
     state_dir = p["state_dir"]
     plist_dest = p["plist"]
 
     launch_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
+    config_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)
+    # Pin the resolved per-session dirs so config.config_path()/state_dir() land
+    # in the right place for seeding here and for any subprocess we spawn.
+    os.environ["HERDR_AMPHETAMINE_CONFIG_DIR"] = str(config_dir)
     os.environ["HERDR_AMPHETAMINE_STATE_DIR"] = str(state_dir)
 
     # Seed config.json with defaults if absent so the TUI has a file to edit and
@@ -96,6 +102,7 @@ def main() -> int:
 
     print(f"[install] stdout log: {log_dir}/monitor.out.log")
     print(f"[install] stderr log: {log_dir}/monitor.err.log")
+    print(f"[install] config file: {config_dir}/config.json")
     print(f"[install] state file: {state_dir}/state.json")
     print("[install] verify with:")
     print(f"    launchctl print gui/$UID/{p['label']}")

@@ -659,8 +659,11 @@ def run_daemon(initial_cfg: Config) -> None:
 
 
 def main(argv=None) -> int:
-    if "HERDR_AMPHETAMINE_STATE_DIR" not in os.environ:
-        os.environ["HERDR_AMPHETAMINE_STATE_DIR"] = str(launchagent.paths()["state_dir"])
+    if ("HERDR_AMPHETAMINE_CONFIG_DIR" not in os.environ
+            or "HERDR_AMPHETAMINE_STATE_DIR" not in os.environ):
+        p = launchagent.paths()
+        os.environ.setdefault("HERDR_AMPHETAMINE_CONFIG_DIR", str(p["config_dir"]))
+        os.environ.setdefault("HERDR_AMPHETAMINE_STATE_DIR", str(p["state_dir"]))
     parser = argparse.ArgumentParser(
         description="Amphetamine sleep-guard daemon for herdr."
     )

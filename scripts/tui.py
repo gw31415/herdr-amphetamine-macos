@@ -38,8 +38,10 @@ import config  # noqa: E402
 import launchagent  # noqa: E402
 import monitor  # noqa: E402
 
-if "HERDR_AMPHETAMINE_STATE_DIR" not in os.environ:
-    os.environ["HERDR_AMPHETAMINE_STATE_DIR"] = str(launchagent.paths()["state_dir"])
+if "HERDR_AMPHETAMINE_CONFIG_DIR" not in os.environ or "HERDR_AMPHETAMINE_STATE_DIR" not in os.environ:
+    _paths = launchagent.paths()
+    os.environ.setdefault("HERDR_AMPHETAMINE_CONFIG_DIR", str(_paths["config_dir"]))
+    os.environ.setdefault("HERDR_AMPHETAMINE_STATE_DIR", str(_paths["state_dir"]))
 
 try:  # curses is optional; the non-TTY path does not need it
     import curses
@@ -312,10 +314,13 @@ def _render_action_bar(stdscr, h, w, footer_msg):
         (" [?] HELP ", "?"),
         (" [q] QUIT ", "q"),
     ]
+    # The bar lives on the bottom line (y = h-1); never paint the lower-right
+    # cell, or addnstr raises curses.error and the whole bar fails to render.
+    last_col = max(1, w - 1)
     x = 0
     y = h - 1
     for text, action in segments:
-        end = min(x + len(text), w)
+        end = min(x + len(text), last_col)
         seg_w = end - x
         if seg_w <= 0:
             break
@@ -323,9 +328,9 @@ def _render_action_bar(stdscr, h, w, footer_msg):
         _LAYOUT.action_segs.append(ClickRegion(
             y=y, action=action, x_start=x, x_end=end - 1, label=text.strip()))
         x = end
-    # Fill the rest of the line
-    if x < w:
-        stdscr.addnstr(y, x, " " * (w - x), w - x, reverse)
+    # Fill the rest of the line up to (but not including) the final column.
+    if x < last_col:
+        stdscr.addnstr(y, x, " " * (last_col - x), last_col - x, reverse)
     if footer_msg:
         fm = footer_msg[:w]
         stdscr.addnstr(h - 2, 0, fm, len(fm), _attr("yellow"))
@@ -469,10 +474,15 @@ def prompt_value(stdscr, label, initial=""):
     try:
         while True:
             y = h - 1
+            # Never paint the lower-right cell: writing the full width of the
+            # last line makes addnstr advance the cursor off-screen and raise
+            # curses.error, which silently aborted the value editor before the
+            # user could type anything.
+            maxw = max(1, w - 1)
             stdscr.move(y, 0)
             stdscr.clrtoeol()
-            text = prompt + "".join(buf)
-            stdscr.addnstr(y, 0, text.ljust(w)[:w], w, curses.A_REVERSE)
+            text = (prompt + "".join(buf)).ljust(maxw)[:maxw]
+            stdscr.addnstr(y, 0, text, maxw, curses.A_REVERSE)
             stdscr.refresh()
             ch = stdscr.getch()
             if ch in (10, 13, curses.KEY_ENTER):  # Enter
@@ -489,9 +499,18 @@ def prompt_value(stdscr, label, initial=""):
 
 
 def edit_numeric(stdscr, cfg_key, label, cast=float):
-    raw = prompt_value(stdscr, label, str(config.load_resolved().get(cfg_key, "")))
+    # Start with an empty field so typing enters a fresh value; the prompt shows
+    # the current value so the user knows what they are replacing.
+    cur = config.load_resolved().get(cfg_key, "")
+    try:
+        shown = f"{float(cur):g}"
+    except (TypeError, ValueError):
+        shown = str(cur) if cur not in (None, "") else "unset"
+    raw = prompt_value(stdscr, f"{label} (was {shown})", "")
     if raw is None:
         return "cancelled"
+    if raw.strip() == "":
+        return "unchanged"
     try:
         val = cast(raw)
     except ValueError:
@@ -521,7 +540,12 @@ def handle_key(stdscr, ch) -> str:
         return set_value(TOGGLE_KEYS[c], not cur)
     if c in PATH_KEYS:
         cfg_key, label = PATH_KEYS[c]
-        raw = prompt_value(stdscr, label, str(config.load_resolved().get(cfg_key) or ""))
+        # Start with an empty field so typing enters a fresh path (pre-filling
+        # the current value made typed text append, e.g. "/old/.../new/...").
+        # Blank + Enter still clears (herdr bin -> env/PATH; app -> default).
+        cur = config.load_resolved().get(cfg_key)
+        shown = cur or ("(env/PATH)" if cfg_key == "herdr_bin_path" else "(default)")
+        raw = prompt_value(stdscr, f"{label} (was {shown})", "")
         if raw is None:
             return "cancelled"
         return set_value(cfg_key, raw.strip() or None)
