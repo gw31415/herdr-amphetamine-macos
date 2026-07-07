@@ -40,6 +40,8 @@ herdr plugin action invoke sync-launchagent --plugin amphetamine-macos
 The installer:
 
 - resolves the `herdr` binary path for the LaunchAgent environment,
+- infers the current herdr session (`HERDR_SESSION_NAME` / `HERDR_SESSION`, or
+  the single running session),
 - seeds `<HERDR_PLUGIN_CONFIG_DIR>/<session>/config.json` (herdr's per-plugin
   config dir, e.g. `~/.config/herdr/plugins/config/amphetamine-macos/<session>/`),
 - writes `~/Library/LaunchAgents/com.herdr.amphetamine.monitor.<session>.plist`,
@@ -143,7 +145,9 @@ the TUI when possible. The daemon reloads config every poll and on best-effort
 per-session config/state directories. herdr injects the plugin-scoped roots
 (`HERDR_PLUGIN_CONFIG_DIR` / `HERDR_PLUGIN_STATE_DIR`); the installer resolves
 the per-session subdirectory and the LaunchAgent pins the resulting absolute
-paths.
+paths. When running scripts outside herdr with multiple running sessions, set
+`HERDR_SESSION_NAME` to choose the session; otherwise scripts fall back to a
+per-session directory under `~/Library/Application Support/herdr-amphetamine/`.
 
 ## Uninstall
 
@@ -152,7 +156,10 @@ herdr plugin action invoke uninstall-launchagent --plugin amphetamine-macos
 herdr plugin unlink amphetamine-macos
 ```
 
-The uninstall action unloads/removes only the current session's LaunchAgent. It does not end Amphetamine sessions.
+The uninstall action unloads/removes only the current session's LaunchAgent. It
+does not end Amphetamine sessions. Standalone manual cleanup is available with
+`python3 scripts/uninstall_launchagent.py --cleanup`, which also removes that
+session's logs and state.
 
 ## Troubleshooting
 
