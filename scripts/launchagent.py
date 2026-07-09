@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 BASE_LABEL = "com.herdr.amphetamine.monitor"
+PLUGIN_ID = "amphetamine-macos"
 SESSION_ENV_KEYS = ("HERDR_SESSION_NAME", "HERDR_SESSION")
 
 
@@ -84,6 +85,34 @@ def stop(label_name: Optional[str] = None) -> None:
     run(["launchctl", "kill", "TERM", target])
 
 
+def _configured_plugin_root(env_var: str) -> Optional[Path]:
+    root = os.environ.get(env_var)
+    return Path(root) if root else None
+
+
+def _discover_plugin_config_root() -> Optional[Path]:
+    """Best-effort herdr plugin config root for standalone script runs."""
+    try:
+        proc = subprocess.run(
+            ["herdr", "plugin", "config-dir", PLUGIN_ID],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    if proc.returncode != 0:
+        return None
+    root = proc.stdout.strip()
+    return Path(root) if root else None
+
+
+def _default_plugin_state_root(home: Path) -> Path:
+    xdg_state = os.environ.get("XDG_STATE_HOME")
+    root = Path(xdg_state) if xdg_state else home / ".local" / "state"
+    return root / "herdr" / "plugins" / PLUGIN_ID
+
+
 def _session_subdir(env_var: str, home: Path, slug: str) -> Path:
     """A per-session data subdir under a herdr-provided plugin directory.
 
@@ -93,9 +122,15 @@ def _session_subdir(env_var: str, home: Path, slug: str) -> Path:
     (standalone/dev runs, or the LaunchAgent which gets pinned absolute paths
     instead), fall back to the legacy ``~/Library/Application Support`` root.
     """
-    root = os.environ.get(env_var)
+    root = _configured_plugin_root(env_var)
     if root:
         return Path(root) / slug
+    if env_var == "HERDR_PLUGIN_CONFIG_DIR":
+        discovered = _discover_plugin_config_root()
+        if discovered:
+            return discovered / slug
+    if env_var == "HERDR_PLUGIN_STATE_DIR" and _discover_plugin_config_root():
+        return _default_plugin_state_root(home) / slug
     return home / "Library" / "Application Support" / "herdr-amphetamine" / slug
 
 

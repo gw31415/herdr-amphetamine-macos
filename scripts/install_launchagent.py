@@ -93,6 +93,11 @@ def main() -> int:
     print(f"[install] wrote plist: {plist_dest}")
 
     launchagent.run(["launchctl", "bootout", launchagent.domain(), str(plist_dest)])
+    # A previous stop stores a persistent disabled override for this label.
+    # On recent macOS, bootstrapping a disabled LaunchAgent can fail with a
+    # generic "Input/output error". Temporarily enable before bootstrap, then
+    # stop() below leaves the install action in its documented stopped state.
+    launchagent.run(["launchctl", "enable", launchagent.service_target(p["label"])])
     code, err = launchagent.run(["launchctl", "bootstrap", launchagent.domain(), str(plist_dest)])
     if code != 0 and err:
         print(f"[install] bootstrap note (ignored if already loaded): {err}", file=sys.stderr)

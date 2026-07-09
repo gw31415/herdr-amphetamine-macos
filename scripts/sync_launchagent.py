@@ -27,6 +27,11 @@ def main() -> int:
     if count:
         print(f"[sync] {count} agents; ensuring LaunchAgent is installed and started.")
         install_launchagent.main()
+        # install_launchagent deliberately stops/disables the service after
+        # registration. Re-enable before bootstrap so sync can recover from a
+        # persisted launchctl disabled override left by a previous zero-agent
+        # stop or uninstall.
+        launchagent.run(["launchctl", "enable", launchagent.service_target(p["label"])])
         launchagent.run(["launchctl", "bootstrap", launchagent.domain(), str(p["plist"])])
         launchagent.start(p["label"])
         return 0

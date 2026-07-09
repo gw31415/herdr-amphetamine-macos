@@ -21,7 +21,8 @@ class LaunchAgentTests(unittest.TestCase):
     def test_paths_are_session_scoped(self):
         with tempfile.TemporaryDirectory() as d:
             with mock.patch.dict(os.environ, {"HERDR_SESSION_NAME": "alpha"}, clear=False):
-                paths = launchagent.paths(Path(d))
+                with mock.patch.object(launchagent, "_discover_plugin_config_root", return_value=None):
+                    paths = launchagent.paths(Path(d))
         self.assertIn("herdr-amphetamine/alpha.", str(paths["config_dir"]))
         self.assertIn("herdr-amphetamine/alpha.", str(paths["state_dir"]))
         self.assertIn("herdr-amphetamine/alpha.", str(paths["log_dir"]))
@@ -40,6 +41,27 @@ class LaunchAgentTests(unittest.TestCase):
         self.assertEqual(paths["state_dir"], Path(st) / slug)
         # Distinct roots keep config and state isolated.
         self.assertNotEqual(paths["config_dir"].parent, paths["state_dir"].parent)
+
+    def test_paths_discover_herdr_plugin_dirs_for_standalone_runs(self):
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            with mock.patch.dict(os.environ, {"HERDR_SESSION_NAME": "alpha"}, clear=True):
+                with mock.patch.object(
+                    launchagent,
+                    "_discover_plugin_config_root",
+                    return_value=home / ".config/herdr/plugins/config/amphetamine-macos",
+                ):
+                    paths = launchagent.paths(home)
+                    slug = launchagent.session_slug()
+
+        self.assertEqual(
+            paths["config_dir"],
+            home / ".config/herdr/plugins/config/amphetamine-macos" / slug,
+        )
+        self.assertEqual(
+            paths["state_dir"],
+            home / ".local/state/herdr/plugins/amphetamine-macos" / slug,
+        )
 
     def test_ambiguous_running_sessions_require_env(self):
         proc = mock.Mock(returncode=0, stdout='{"sessions":[{"name":"a","running":true},{"name":"b","running":true}]}')
