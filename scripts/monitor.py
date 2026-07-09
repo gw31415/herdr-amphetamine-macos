@@ -82,6 +82,19 @@ def top_up_duration_minutes(remaining_seconds: int, add_minutes: float) -> float
     return float(math.ceil(max(0, remaining_seconds) / 60.0 + add_minutes))
 
 
+def initial_session_duration_minutes(add_minutes: float, threshold_minutes: float) -> float:
+    """Return the duration for a newly-created owned session.
+
+    A first session that is only ``add_minutes`` long can start out below the
+    top-up threshold, causing an immediate second top-up cycle. Start at
+    threshold + add so the initial session is already above the minimum. ``0``
+    preserves the documented infinite-session meaning.
+    """
+    if add_minutes <= 0:
+        return 0.0
+    return float(add_minutes + max(0.0, threshold_minutes))
+
+
 def next_monitor_state(
     current_state: str,
     observed_working: bool,
@@ -481,7 +494,12 @@ def iterate(cfg: Config, ctx: MonitorCtx, now: float) -> MonitorCtx:
             new_state,
             owned,
             amphetamine_ctl.is_session_active,
-            lambda _disp=False: _start(),
+            lambda _disp=False: _start(
+                initial_session_duration_minutes(
+                    cfg.top_up_minutes,
+                    cfg.top_up_threshold_minutes,
+                )
+            ),
             prevent_fn,
             log,
         )
@@ -510,7 +528,12 @@ def iterate(cfg: Config, ctx: MonitorCtx, now: float) -> MonitorCtx:
             # No active session.
             log("No active Amphetamine session while agents work; starting a short session.")
             try:
-                _start()
+                _start(
+                    initial_session_duration_minutes(
+                        cfg.top_up_minutes,
+                        cfg.top_up_threshold_minutes,
+                    )
+                )
                 prevent_fn()
                 owned = True
                 last_t = now

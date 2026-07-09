@@ -383,6 +383,19 @@ class IterateTests(unittest.TestCase):
         self.assertTrue(ctx.owned_session)
         self.assertTrue(monitor.amphetamine_ctl.start_session.called)
 
+    def test_initial_start_includes_top_up_threshold(self):
+        # Starting with only top_up_minutes (1m) would immediately be below the
+        # 2m top-up threshold. Initial owned sessions should start at
+        # threshold + top-up, so the first poll after startup is stable.
+        self._enter(self._patches(statuses=["working"], active=[False, False, False]))
+        cfg = self._cfg()
+        ctx = monitor.MonitorCtx(monitor_state="off", last_transition=0.0)
+        t = 1000.0
+        ctx = monitor.iterate(cfg, ctx, t)
+        ctx = monitor.iterate(cfg, ctx, t + 5)
+        self.assertEqual(ctx.monitor_state, "on")
+        monitor.amphetamine_ctl.start_session.assert_called_with(False, 3.0)
+
     def test_stops_after_stop_grace(self):
         self._enter(self._patches(statuses=["idle"], active=[False]))
         cfg = self._cfg()
@@ -470,6 +483,14 @@ class IterateTests(unittest.TestCase):
         self.assertEqual(ctx.monitor_state, "on")
         self.assertTrue(ctx.owned_session)
         self.assertTrue(monitor.amphetamine_ctl.start_session.called)
+
+    def test_no_active_session_restart_includes_top_up_threshold(self):
+        self._enter(self._patches(statuses=["working"], remaining=-3))
+        cfg = self._cfg()
+        ctx = monitor.MonitorCtx(monitor_state="on", owned_session=True, last_transition=0.0)
+        ctx = monitor.iterate(cfg, ctx, 1001.0)
+        self.assertEqual(ctx.monitor_state, "on")
+        monitor.amphetamine_ctl.start_session.assert_called_with(False, 3.0)
 
 
 class DisarmedTests(unittest.TestCase):
